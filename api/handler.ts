@@ -1,4 +1,5 @@
-// Vercel serverless entry — cattura TUTTI i request a /api/*.
+// Vercel serverless entry — riceve tutti i request a /api/v1/* e /health
+// tramite le `rewrites` configurate in vercel.json.
 //
 // Strategia: usiamo `app.inject()` di Fastify (interfaccia di test che simula
 // HTTP senza socket reali). Questo evita problemi con il body parser di
@@ -49,8 +50,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const injectOpts: InjectOptions = {
       // light-my-request usa un set ristretto di HTTPMethods rispetto a Fastify
-      // (no PROPFIND ecc.) — cast a any per evitare l'incompatibilità di tipi.
+      // (no PROPFIND ecc.) — cast a InjectOptions["method"] per allinearci.
       method: (req.method || "GET") as InjectOptions["method"],
+      // Importante: req.url è preservato attraverso le `rewrites` di Vercel,
+      // quindi Fastify riceve il path originale (es. /api/v1/favorites) e
+      // matcha le sue route normalmente.
       url: req.url || "/",
       headers: req.headers as Record<string, string | string[]>,
       payload,
