@@ -1,0 +1,119 @@
+// Pasto — schema dati
+// PostgreSQL in produzione (Vercel + Neon/Vercel Postgres).
+// Macros nei MealEntry sono snapshottati al momento dell'inserimento:
+// se il Food viene aggiornato in seguito, lo storico resta consistente.
+
+generator client {
+  provider      = "prisma-client-js"
+  // native = sviluppo locale; rhel-openssl-3.0.x = runtime Vercel Node 20
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  // In single-user mode email/passwordHash sono assenti.
+  // Per aggiungere auth: `email String @unique` + `passwordHash String`.
+  name          String   @default("Marco")
+  timezone      String   @default("Europe/Rome")
+  aiCreditsUsed Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  goals       Goals?
+  meals       MealEntry[]
+  water       WaterLog[]
+  favorites   Favorite[]
+  customFoods Food[]      @relation("UserCustomFoods")
+}
+
+model Goals {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kcal      Int      @default(2200)
+  proteinG  Int      @default(130)
+  carbsG    Int      @default(250)
+  fatG      Int      @default(75)
+  fiberG    Int      @default(30)
+  waterMl   Int      @default(2500)
+  updatedAt DateTime @updatedAt
+}
+
+model Food {
+  id              String   @id
+  source          String // 'seed' | 'openfoodfacts' | 'user' | 'ai'
+  externalId      String? // EAN per openfoodfacts
+  name            String
+  nameNorm        String // lowercase + senza diacritici, per fuzzy search
+  category        String
+  kcal100         Float
+  protein100      Float
+  carbs100        Float
+  fat100          Float
+  fiber100        Float    @default(0)
+  sugars100       Float    @default(0)
+  satFat100       Float    @default(0)
+  unit            String // 'g' | 'ml' | 'pz'
+  defaultServing  Float
+  perUnitG        Float?
+  brand           String?
+  imageUrl        String?
+  createdByUserId String?
+  createdByUser   User?    @relation("UserCustomFoods", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  meals MealEntry[]
+
+  @@index([nameNorm])
+  @@index([source, externalId])
+}
+
+model MealEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String // 'YYYY-MM-DD' locale utente
+  slot      String // 'colazione' | 'pranzo' | 'cena' | 'spuntini'
+  foodId    String
+  food      Food     @relation(fields: [foodId], references: [id])
+  qty       Float
+  unit      String
+  grams     Float
+
+  // snapshot macros — NON ricomputare a runtime
+  kcal     Int
+  proteinG Float
+  carbsG   Float
+  fatG     Float
+  fiberG   Float
+  sugarsG  Float
+  satFatG  Float
+
+  source    String // 'search' | 'barcode' | 'photo' | 'ai' | 'favorite' | 'manual'
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+model WaterLog {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String // 'YYYY-MM-DD'
+  ml        Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, date])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  items     String // JSON serializzato: [{ foodId, qty, unit }, ...]
+  createdAt DateTime @default(now())
+}

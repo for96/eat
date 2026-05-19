@@ -1,0 +1,16 @@
+{
+  "name": "pasto-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs --prod",
+    "build:dev": "node build.mjs",
+    "dev": "node build.mjs --serve",
+    "preview": "node build.mjs --prod && npx --yes serve dist -p 5173"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "sharp": "^0.33.5"
+  }
+}

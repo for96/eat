@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Pasto — diario nutrizionale</title>
+
+<!-- PWA manifest + iOS web-app meta -->
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Pasto" />
+<meta name="theme-color" content="#F2ECDF" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#161310" media="(prefers-color-scheme: dark)" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Instrument+Serif:ital@0;1&family=DM+Serif+Display:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    /* default palette: "Crema" (will be overridden by JS from tweaks) */
+    --bg: #F2ECDF;
+    --bg-2: #EAE1CF;
+    --surface: #FBF7EE;
+    --surface-2: #F6F1E5;
+    --ink: #1F1B16;
+    --ink-2: #4A413A;
+    --ink-soft: #7A6F62;
+    --ink-faint: #B5AB9B;
+    --line: #E2D7C0;
+    --line-soft: #ECE3D0;
+    --accent: #C25A3A;
+    --accent-soft: #E8C6B6;
+
+    --kcal:    #1F1B16;
+    --protein: #C25A3A;
+    --carbs:   #D6A24E;
+    --fat:     #7B8753;
+    --fiber:   #8B9D7C;
+    --water:   #3E6781;
+
+    --font-display: "Newsreader", "Times New Roman", serif;
+    --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, monospace;
+    --display-feat: "ss01" on, "ss02" on;
+
+    --space: 1;
+    --radius: 18px;
+    --radius-sm: 12px;
+    --radius-xl: 28px;
+  }
+
+  /* palette: notte */
+  body[data-palette="notte"] {
+    --bg: #161310; --bg-2: #1E1A15; --surface: #211C16; --surface-2: #2A241D;
+    --ink: #F5EFE2; --ink-2: #D6CCB8; --ink-soft: #9C907D; --ink-faint: #5C5547;
+    --line: #2E281F; --line-soft: #251F18; --accent: #E0794E; --accent-soft: #4A2E20;
+    --kcal: #F5EFE2; --protein: #E0794E; --carbs: #E6B86A;
+    --fat: #B1C57A; --fiber: #A8C09A; --water: #6FA0C7;
+  }
+  /* palette: bosco */
+  body[data-palette="bosco"] {
+    --bg: #ECEEE4; --bg-2: #DFE3D2; --surface: #F4F5EC; --surface-2: #EDEFE0;
+    --ink: #1B2418; --ink-2: #384534; --ink-soft: #6A7461; --ink-faint: #A8B09C;
+    --line: #D2D6C1; --line-soft: #DDE0CE; --accent: #3D6B3E; --accent-soft: #C5D5C1;
+    --kcal: #1B2418; --protein: #3D6B3E; --carbs: #C49B4A;
+    --fat: #B05B3A; --fiber: #6A8A5E; --water: #3E6781;
+  }
+  /* palette: carta */
+  body[data-palette="carta"] {
+    --bg: #F7F6F2; --bg-2: #EEEDE7; --surface: #FFFFFF; --surface-2: #F6F5F1;
+    --ink: #0F1115; --ink-2: #2E323B; --ink-soft: #6B6E78; --ink-faint: #B7BAC2;
+    --line: #DEDDD6; --line-soft: #EAE9E3; --accent: #2A4DB8; --accent-soft: #D4DCEF;
+    --kcal: #0F1115; --protein: #2A4DB8; --carbs: #D08020;
+    --fat: #6B7B40; --fiber: #4F8A8B; --water: #2A4DB8;
+  }
+
+  body[data-density="compact"] { --space: 0.75; --radius: 14px; --radius-sm: 10px; --radius-xl: 22px; }
+  body[data-density="cozy"]    { --space: 1.15; --radius: 22px; --radius-sm: 14px; --radius-xl: 32px; }
+
+  /* typography presets */
+  body[data-type="moderno"] {
+    --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+    --font-ui: "Geist", ui-sans-serif, system-ui, sans-serif;
+  }
+  body[data-type="classico"] {
+    --font-display: "DM Serif Display", "Times New Roman", serif;
+    --font-ui: "Geist", ui-sans-serif, system-ui, sans-serif;
+  }
+  body[data-type="instrument"] {
+    --font-display: "Instrument Serif", "Times New Roman", serif;
+    --font-ui: "Geist", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01", "cv11";
+    overscroll-behavior: none;
+  }
+
+  /* Ambient frame */
+  .ambient {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+      radial-gradient(120% 80% at 50% -10%, var(--bg-2) 0%, transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+  .stage {
+    width: 100%;
+    max-width: 420px;
+    height: min(880px, calc(100vh - 48px));
+    min-height: 720px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 36px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.5) inset,
+      0 30px 60px -20px rgba(31,27,22,.25),
+      0 10px 30px -10px rgba(31,27,22,.15);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  @media (max-width: 520px) {
+    .ambient { padding: 0; }
+    .stage { max-width: 100%; height: 100vh; min-height: 0; border-radius: 0; border: 0; box-shadow: none; }
+  }
+
+  .scroller {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .scroller::-webkit-scrollbar { display: none; }
+
+  /* Common */
+  .display { font-family: var(--font-display); font-feature-settings: var(--display-feat); letter-spacing: -0.01em; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .num { font-variant-numeric: tabular-nums; }
+  .eyebrow {
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 500;
+  }
+  button { font-family: inherit; }
+
+  /* Hide scrollbars on horizontal scrollers */
+  .hscroll { overflow-x: auto; scrollbar-width: none; }
+  .hscroll::-webkit-scrollbar { display: none; }
+
+  #root { display: contents; }
+
+  /* Loading splash before React mounts */
+  .splash {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: var(--bg); color: var(--ink-soft);
+    font-family: var(--font-display); font-style: italic; font-size: 20px;
+  }
+  .splash::after {
+    content: ""; display: block; margin: 12px auto 0; width: 20px; height: 20px;
+    border-radius: 50%; border: 2px solid var(--ink-faint); border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body data-palette="crema" data-density="regular" data-type="editoriale">
+
+<div id="root">
+  <div class="splash">Pasto</div>
+</div>
+
+<!-- React 18 (production builds) — esterni dal bundle per cache CDN -->
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+
+<!-- Default tweaks. Cambia qui se vuoi che parta in notte/bosco/carta. -->
+<script>
+  window.PASTO_DEFAULTS = {
+    palette: "crema",
+    density: "regular",
+    typography: "editoriale"
+  };
+  // Light mode = crema, dark mode = notte. Se l'utente del sistema preferisce
+  // dark e non c'è ancora una preferenza salvata, switcha al boot.
+  try {
+    const saved = localStorage.getItem("pasto.palette");
+    if (saved) {
+      window.PASTO_DEFAULTS.palette = saved;
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      window.PASTO_DEFAULTS.palette = "notte";
+    }
+    document.body.dataset.palette = window.PASTO_DEFAULTS.palette;
+  } catch (e) { /* localStorage non disponibile in modalità privata, ignora */ }
+</script>
+
+<!-- Bundle dell'app: tutti i .jsx/.js concatenati e compilati da build.mjs -->
+<script src="/bundle.js"></script>
+
+<!-- Registrazione Service Worker (offline + installabile) -->
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch((err) =>
+        console.warn("[SW] registration failed:", err),
+      );
+    });
+  }
+</script>
+
+</body>
+</html>
