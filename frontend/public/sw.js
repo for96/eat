@@ -8,7 +8,7 @@
 //
 // Versionamento: cambia CACHE_VERSION quando vuoi forzare l'invalidazione.
 
-const CACHE_VERSION = "pasto-v1";
+const CACHE_VERSION = "pasto-v2-local-first";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const FONTS_CACHE = `${CACHE_VERSION}-fonts`;
 

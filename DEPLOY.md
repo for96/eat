@@ -1,195 +1,69 @@
 # Deploy di Pasto su Vercel
 
-Guida step-by-step per pubblicare Pasto su internet, accessibile anche dal telefono.
+Pasto ora e una PWA local-first con un proxy serverless minimale.
 
-**Architettura finale**:
-- Frontend (React + PWA) → Vercel CDN
-- Backend (Fastify) → Vercel Serverless Functions sotto `/api/*`
-- Database → PostgreSQL su **Neon** (free tier 0.5 GB, no carta di credito)
+## Architettura deploy
 
-Tutto sotto lo stesso dominio `pasto-xxx.vercel.app` (niente CORS issues).
+- Frontend React/PWA statico -> Vercel CDN
+- Proxy barcode -> Vercel Serverless Function `api/handler.ts`
+- Persistenza utente -> `localStorage` del dispositivo
+- Database -> non richiesto
 
----
+## Variabili ambiente
 
-## Prerequisiti
-
-- Account **GitHub** (https://github.com/signup) — gratis
-- Account **Vercel** (https://vercel.com/signup) — gratis, login con GitHub
-- Account **Neon** (https://console.neon.tech/signup) — gratis, login con GitHub
-- Node 20+ locale (già ce l'hai, se hai fatto girare il backend)
-
-Tempo stimato: **15–25 minuti** la prima volta.
-
----
-
-## 1. Crea il database su Neon
-
-1. Vai su https://console.neon.tech/
-2. Login con GitHub → **Create a new project**
-3. Nome progetto: `pasto`
-4. Region: scegli quella più vicina (`Europe (Frankfurt)` se sei in Italia)
-5. Postgres version: lascia default (16)
-6. Clicca **Create project**
-7. Nella pagina che si apre, copia la **Connection string** che parte con `postgresql://...?sslmode=require`. Questa è il tuo `DATABASE_URL`.
-   - Suggerimento: usa la versione **"Pooled connection"** (con `-pooler` nell'host) per Vercel serverless — gestisce meglio le connessioni a freddo.
-
-Tienila pronta in una nota — la userai in 2 posti (locale e Vercel).
-
----
-
-## 2. Prepara lo schema sul DB remoto (da locale)
-
-Dal terminale, dentro `Desktop/pasto`:
-
-```bash
-# 1. Crea .env con la stringa Neon.
-#    ⚠ NON usare `echo > .env` su Windows PowerShell: aggiunge virgolette
-#    spurie e/o BOM UTF-16 che rompono Prisma. Apri invece il file con
-#    Blocco Note (`notepad .env`) o VS Code e incolla questa SINGOLA riga:
-#
-#    DATABASE_URL="postgresql://...la-tua-stringa-neon..."
-#
-#    (oppure copia .env.example in .env e modificalo:  `copy .env.example .env`)
-
-# 2. Genera il Prisma client + applica lo schema sul DB Neon
-npm install
-npm run db:push
-# → output: "Your database is now in sync with your Prisma schema. Done in 3s"
-
-# 3. Popola le 38 alimenti seed + utente default + 4 preferiti
-npm run seed
-# → output: "Seed completato — users=1, foods=38, favorites=4, goals=1"
-```
-
-A questo punto Neon ha lo schema + i dati seed. Si vede nella dashboard di Neon → Tables.
-
----
-
-## 3. Pubblica il codice su GitHub
-
-```bash
-cd C:\Users\oltim\Desktop\pasto
-
-git init
-git add .
-git commit -m "initial commit"
-```
-
-Poi su GitHub:
-1. https://github.com/new
-2. Repository name: `pasto`
-3. Pubblico o privato — entrambi funzionano con Vercel free
-4. **NON** spuntare README/`.gitignore`/license (già nostri)
-5. Clicca **Create repository**
-
-GitHub ti mostra i comandi `git remote add origin ...` — copiali ed eseguili:
-
-```bash
-git remote add origin https://github.com/TUO-USER/pasto.git
-git branch -M main
-git push -u origin main
-```
-
----
-
-## 4. Connetti Vercel al repo
-
-1. Vai su https://vercel.com/new
-2. **Import Git Repository** → seleziona il repo `pasto` (se non lo vedi, clicca "Adjust GitHub App Permissions" per dargli accesso)
-3. Nella schermata di setup:
-   - **Project Name**: `pasto` (o quello che vuoi — diventa il sottodominio)
-   - **Framework Preset**: lascia "Other"
-   - **Root Directory**: lascia `./` (la root del repo)
-   - **Build Command**: lascia vuoto (usa quello in `vercel.json`)
-   - **Output Directory**: lascia vuoto (idem)
-4. Espandi **Environment Variables** e aggiungi:
+Imposta su Vercel:
 
 | Key | Value |
 |---|---|
-| `DATABASE_URL` | `postgresql://...` (la stessa stringa Neon usata sopra) |
-| `CORS_ORIGIN` | `*` (oppure l'URL finale `https://pasto-xxx.vercel.app` quando lo saprai) |
-| `LLM_PROVIDER` | `stub` |
-| `OFF_USER_AGENT` | `Pasto/0.1 (tuamail@example.com)` (metti la tua mail per cortesia con OpenFoodFacts) |
-| `DEFAULT_USER_ID` | `default-user` |
+| `OFF_USER_AGENT` | `Pasto/0.1 (tuamail@example.com)` |
+| `CORS_ORIGIN` | `*` oppure l'URL del deploy |
 
-5. Clicca **Deploy**
+`DATABASE_URL`, Prisma, Neon e seed DB non sono piu necessari per avviare l'app.
 
-Vercel:
-- Clona il repo
-- Esegue `npm install` (root + frontend)
-- Esegue `vercel-build`: genera Prisma client, sincronizza schema (`db push`), builda il frontend
-- Pubblica le serverless functions (`/api/*`) e i file statici di `frontend/dist`
+## Deploy
 
-Dopo ~2 minuti vedi "Your project is ready 🎉" con l'URL `https://pasto-xxx.vercel.app`.
+1. Importa il repository su Vercel.
+2. Lascia root directory `./`.
+3. Lascia che Vercel usi `vercel.json`.
+4. Aggiungi le environment variables sopra.
+5. Deploy.
 
----
+Il build esegue:
 
-## 5. Verifica
+```bash
+npm run vercel-build
+```
 
-Apri nel browser:
+che installa le dipendenze frontend e genera `frontend/dist/`.
 
-- `https://pasto-xxx.vercel.app/health` → `{"ok":true}` (potrebbe metterci 1–2s la prima volta = cold start)
-- `https://pasto-xxx.vercel.app/api/v1/me` → `{"user":{...}}`
-- `https://pasto-xxx.vercel.app/` → la webapp di Pasto
+## Verifica
 
-Aggiungi un pasto, ricarica → ancora lì → ✓ persistenza funziona.
+Apri:
 
-Se vedi "Backend non raggiungibile":
-- Apri DevTools → Network → guarda la richiesta a `/api/v1/...`. Se è 500, vai su Vercel Dashboard → Functions → Logs e leggi l'errore (di solito DATABASE_URL sbagliato).
+- `/api/health` -> `{"ok":true}`
+- `/` -> PWA Pasto
 
----
+Per provare il proxy barcode:
 
-## 6. Installa la PWA sul telefono
+```bash
+curl -X POST https://TUO-DEPLOY.vercel.app/api/v1/barcode/lookup \
+  -H "content-type: application/json" \
+  -d "{\"ean\":\"8076809513692\"}"
+```
 
-### iPhone (Safari)
-1. Apri `https://pasto-xxx.vercel.app/` in **Safari** (non Chrome — su iOS solo Safari installa PWA)
-2. Tocca il pulsante condividi (quadrato con freccia)
-3. Scorri e tocca **"Aggiungi a Home"**
-4. Conferma → icona "Pasto" sulla home, apre a tutto schermo
+## PWA su telefono
 
-### Android (Chrome)
-1. Apri l'URL in Chrome
-2. Menu (⋮) → **"Installa app"** o **"Aggiungi a schermata Home"**
-3. Conferma
+### iPhone
 
----
+Apri l'URL in Safari, Condividi, Aggiungi a Home.
 
-## Aggiornamenti successivi
+### Android
 
-Ogni `git push` su `main` → Vercel re-deploy automatico (~1 minuto).
+Apri l'URL in Chrome, menu, Installa app o Aggiungi a schermata Home.
 
-Se modifichi lo schema Prisma:
-- Vercel esegue `prisma db push` durante il build. Se la modifica è additiva (nuova colonna nullable, nuova tabella) → applicato automaticamente.
-- Se la modifica è destruttiva (drop colonna, cambio tipo) → il build fallisce. Risolvi in locale con `npm run db:push -- --accept-data-loss` puntando a Neon, poi rideploya.
+## Note operative
 
-Per aggiornare la PWA sul telefono dopo un deploy nuovo: di solito basta riaprire l'app. Se non vede gli update, chiudila completamente e riaprila (in iOS: swipe up dall'app preview).
-
----
-
-## Troubleshooting
-
-**"Function exceeded timeout"** sui primi request:
-- Cold start del serverless + connessione a Neon = a volte 5–10s. Sul piano Hobby c'è limite 10s. Se persiste:
-  - Verifica che `DATABASE_URL` sia il **pooled** URL di Neon (host con `-pooler`)
-  - Aggiungi `?pgbouncer=true&connect_timeout=10` alla connection string
-
-**"Internal Server Error" generico**:
-- Dashboard Vercel → tab **Logs** → guarda lo stack trace
-- Se manca `DATABASE_URL`: setta env var e ridepoya
-- Se è "Engine query type mismatch": riesegui `npm run db:push` in locale
-
-**Foto/barcode non funziona**:
-- I body multipart sono delicati su serverless. Se l'upload immagine fallisce, prova prima con `prompt()` per barcode (già il fallback). La camera vera richiede HTTPS (Vercel ce l'ha di default ✓).
-
-**Voglio passare da Vercel Postgres a Neon (o viceversa)**:
-- Sono entrambi Postgres standard → basta cambiare `DATABASE_URL` su Vercel + rigirare `npm run db:push` + `npm run seed`.
-
----
-
-## Cosa fa il deploy in pratica (per capire cosa sta succedendo)
-
-- `vercel.json` dice a Vercel: builda con `npm run vercel-build`, servi `frontend/dist/` come statico, `api/*.ts` come funzioni
-- `api/[...path].ts` cattura ogni `/api/*` request e la passa a Fastify (singola istanza, cacheata tra chiamate)
-- Fastify usa Prisma per parlare con Neon
-- Frontend chiama `/api/v1/...` (relativo, stesso dominio → niente CORS)
-- Service Worker (`sw.js`) cache-a HTML+JS+icone → primo avvio offline funziona
+- Lo scanner camera richiede HTTPS o localhost e permesso camera del browser.
+- Se la camera non e disponibile, usa l'inserimento manuale EAN.
+- I dati sono locali al dispositivo: cancellare dati sito/browser rimuove storico, preferiti e scansioni.
+- Open Food Facts puo restituire dati incompleti; la UI mostra avvisi invece di inventare valutazioni.

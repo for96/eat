@@ -5,12 +5,11 @@
   "framework": null,
   "functions": {
     "api/handler.ts": {
-      "maxDuration": 30,
-      "includeFiles": "node_modules/.prisma/client/**"
+      "maxDuration": 10
     }
   },
   "rewrites": [
-    { "source": "/api/v1/:path*", "destination": "/api/handler" },
+    { "source": "/api/v1/barcode/lookup", "destination": "/api/handler" },
     { "source": "/api/health", "destination": "/api/handler" },
     { "source": "/health", "destination": "/api/handler" }
   ]

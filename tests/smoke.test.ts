@@ -1,223 +1,122 @@
-// Smoke test: copre il "happy path" di ogni endpoint principale.
-// Usa l'app costruita via buildApp() + .inject() di Fastify (zero HTTP overhead).
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleAppRequest } from "../src/app.js";
+import { scoreQuality, type OffProduct } from "../src/services/openfoodfacts.js";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
-
-let app: FastifyInstance;
-
-beforeAll(async () => {
-  app = await buildApp();
-  await app.ready();
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
-afterAll(async () => {
-  await app.close();
+describe("Pasto lightweight proxy", () => {
+  it("GET /api/health -> 200", async () => {
+    const res = await handleAppRequest({ method: "GET", url: "/api/health" });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ ok: true });
+  });
+
+  it("POST /api/v1/barcode/lookup rejects invalid EAN", async () => {
+    const res = await handleAppRequest({
+      method: "POST",
+      url: "/api/v1/barcode/lookup",
+      body: { ean: "abc" },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/v1/barcode/lookup returns 404 when OFF has no product", async () => {
+    mockOffResponse({ status: 0 });
+    const res = await handleAppRequest({
+      method: "POST",
+      url: "/api/v1/barcode/lookup",
+      body: { ean: "12345678" },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/v1/barcode/lookup maps food and quality fields", async () => {
+    mockOffResponse({
+      status: 1,
+      product: {
+        product_name_it: "Pasta test",
+        brands: "Pasto Lab",
+        image_front_url: "https://example.com/pasta.jpg",
+        categories_tags: ["it:pasta"],
+        nutriscore_grade: "b",
+        nova_group: 2,
+        ecoscore_grade: "a",
+        additives_n: 0,
+        nutriments: {
+          "energy-kcal_100g": 350,
+          proteins_100g: 12,
+          carbohydrates_100g: 70,
+          fat_100g: 2,
+          fiber_100g: 8,
+          sugars_100g: 3,
+          "saturated-fat_100g": 0.5,
+          salt_100g: 0.1,
+        },
+      },
+    });
+
+    const res = await handleAppRequest({
+      method: "POST",
+      url: "/api/v1/barcode/lookup",
+      body: { ean: "8076809513692" },
+    });
+
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.food).toMatchObject({
+      id: "off-8076809513692",
+      name: "Pasta test",
+      brand: "Pasto Lab",
+      kcal: 350,
+      p: 12,
+      c: 70,
+      f: 2,
+    });
+    expect(body.quality.score).toBeGreaterThanOrEqual(70);
+    expect(body.quality.nutriScore).toBe("b");
+    expect(body.quality.novaGroup).toBe(2);
+    expect(body.quality.ecoScore).toBe("a");
+  });
 });
 
-describe("Pasto API smoke", () => {
-  it("GET /health → 200", async () => {
-    const r = await app.inject({ method: "GET", url: "/health" });
-    expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: true });
-  });
-
-  it("GET /api/v1/me → utente default", async () => {
-    const r = await app.inject({ method: "GET", url: "/api/v1/me" });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().user.id).toBeTruthy();
-    expect(r.json().user.passwordHash).toBeUndefined();
-  });
-
-  it("GET /api/v1/goals → default 2200 kcal", async () => {
-    const r = await app.inject({ method: "GET", url: "/api/v1/goals" });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().kcal).toBeGreaterThan(0);
-  });
-
-  it("PUT /api/v1/goals → aggiorna kcal", async () => {
-    const r = await app.inject({
-      method: "PUT",
-      url: "/api/v1/goals",
-      payload: { kcal: 2400 },
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().kcal).toBe(2400);
-  });
-
-  it("GET /api/v1/foods/search?q=pasta → almeno 3 pasta", async () => {
-    const r = await app.inject({
-      method: "GET",
-      url: "/api/v1/foods/search?q=pasta",
-    });
-    expect(r.statusCode).toBe(200);
-    const foods = r.json().foods as Array<{ id: string }>;
-    expect(foods.length).toBeGreaterThanOrEqual(3);
-    expect(foods.some((f) => f.id === "pasta-pomodoro")).toBe(true);
-  });
-
-  it("POST /api/v1/meals → 201 con macros snapshottati", async () => {
-    const r = await app.inject({
-      method: "POST",
-      url: "/api/v1/meals",
-      payload: {
-        date: "2030-01-15",
-        slot: "pranzo",
-        food_id: "pasta-pomodoro",
-        qty: 150,
-        unit: "g",
-        source: "manual",
+describe("quality scoring", () => {
+  it("penalizes ultra-processed products with critical nutrients", () => {
+    const quality = scoreQuality({
+      nutriscore_grade: "e",
+      nova_group: 4,
+      ecoscore_grade: "d",
+      additives_n: 6,
+      nutriments: {
+        sugars_100g: 28,
+        "saturated-fat_100g": 8,
+        salt_100g: 2,
       },
-    });
-    expect(r.statusCode).toBe(201);
-    const entry = r.json().entry;
-    expect(entry.grams).toBe(150);
-    expect(entry.kcal).toBe(222); // 148 * 1.5
+    } satisfies OffProduct);
+
+    expect(quality.grade).toBe("poor");
+    expect(quality.score).toBeLessThan(30);
+    expect(quality.negatives).toContain("Prodotto ultra-processato NOVA 4");
+    expect(quality.negatives).toContain("Zuccheri elevati");
   });
 
-  it("GET /api/v1/meals/:date → ritrova l'entry appena creato", async () => {
-    const r = await app.inject({
-      method: "GET",
-      url: "/api/v1/meals/2030-01-15",
-    });
-    expect(r.statusCode).toBe(200);
-    const day = r.json();
-    expect(day.slots.pranzo.length).toBeGreaterThan(0);
-    expect(day.slots.pranzo[0].foodId).toBe("pasta-pomodoro");
-  });
+  it("marks incomplete OFF data without inventing quality", () => {
+    const quality = scoreQuality({
+      nutriments: {},
+    } satisfies OffProduct);
 
-  it("PATCH /api/v1/meals/:id → ricalcola macros", async () => {
-    // crea
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/v1/meals",
-      payload: {
-        date: "2030-01-16",
-        slot: "cena",
-        food_id: "pollo-petto",
-        qty: 100,
-        source: "manual",
-      },
-    });
-    expect(created.statusCode).toBe(201);
-    const id = created.json().entry.id;
-    // patch a 200g → kcal raddoppiati
-    const r = await app.inject({
-      method: "PATCH",
-      url: `/api/v1/meals/${id}`,
-      payload: { qty: 200 },
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().entry.kcal).toBe(330); // 165 * 2
-  });
-
-  it("DELETE /api/v1/meals/:id → 204", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/v1/meals",
-      payload: {
-        date: "2030-01-17",
-        slot: "spuntini",
-        food_id: "mela",
-        qty: 1,
-        source: "manual",
-      },
-    });
-    const id = created.json().entry.id;
-    const r = await app.inject({
-      method: "DELETE",
-      url: `/api/v1/meals/${id}`,
-    });
-    expect(r.statusCode).toBe(204);
-  });
-
-  it("POST /api/v1/water/:date/delta → cumula", async () => {
-    // reset esplicito: il test non è isolato dal DB (SQLite condiviso fra run)
-    await app.inject({
-      method: "PUT",
-      url: "/api/v1/water/2030-02-01",
-      payload: { ml: 0 },
-    });
-    const r1 = await app.inject({
-      method: "POST",
-      url: "/api/v1/water/2030-02-01/delta",
-      payload: { delta: 250 },
-    });
-    expect(r1.json().ml).toBe(250);
-    const r2 = await app.inject({
-      method: "POST",
-      url: "/api/v1/water/2030-02-01/delta",
-      payload: { delta: 250 },
-    });
-    expect(r2.json().ml).toBe(500);
-  });
-
-  it("GET /api/v1/favorites → 4 preferiti seed", async () => {
-    const r = await app.inject({ method: "GET", url: "/api/v1/favorites" });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().favorites.length).toBeGreaterThanOrEqual(4);
-  });
-
-  it("POST /api/v1/favorites/:id/apply → crea N MealEntry", async () => {
-    const all = await app.inject({ method: "GET", url: "/api/v1/favorites" });
-    const fav = all.json().favorites[0];
-    const r = await app.inject({
-      method: "POST",
-      url: `/api/v1/favorites/${fav.id}/apply`,
-      payload: { date: "2030-03-01", slot: "colazione" },
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().entries.length).toBeGreaterThan(0);
-  });
-
-  it("POST /api/v1/ai/estimate-text → matcha pasta-pomodoro", async () => {
-    const r = await app.inject({
-      method: "POST",
-      url: "/api/v1/ai/estimate-text",
-      payload: { description: "un piatto di pasta al pomodoro con parmigiano" },
-    });
-    expect(r.statusCode).toBe(200);
-    const j = r.json();
-    expect(j.matchId).toBe("pasta-pomodoro");
-    expect(j.kcal).toBeGreaterThan(100);
-    expect(j.confidence).toBeGreaterThan(0.5);
-  });
-
-  it("GET /api/v1/stats/summary?days=30 → numeri ragionevoli", async () => {
-    const r = await app.inject({
-      method: "GET",
-      url: "/api/v1/stats/summary?days=30",
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json().total_days).toBe(30);
-  });
-
-  it("GET /api/v1/export.json → dump completo", async () => {
-    const r = await app.inject({ method: "GET", url: "/api/v1/export.json" });
-    expect(r.statusCode).toBe(200);
-    const j = r.json();
-    expect(j.user).toBeTruthy();
-    expect(j.goals).toBeTruthy();
-    expect(Array.isArray(j.meals)).toBe(true);
-  });
-
-  it("POST /api/v1/foods → crea food custom", async () => {
-    const r = await app.inject({
-      method: "POST",
-      url: "/api/v1/foods",
-      payload: {
-        name: "Insalata test custom",
-        category: "Verdure",
-        kcal_100: 25,
-        protein_100: 1.2,
-        carbs_100: 4,
-        fat_100: 0.3,
-        unit: "g",
-        default_serving: 100,
-      },
-    });
-    expect(r.statusCode).toBe(201);
-    expect(r.json().food.source).toBe("user");
+    expect(quality.grade).toBe("unknown");
+    expect(quality.warnings.length).toBeGreaterThanOrEqual(4);
   });
 });
+
+function mockOffResponse(payload: unknown): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })),
+  );
+}

@@ -68,8 +68,8 @@ function AddMealSheet({ open, onClose, defaultSlot = 'colazione', onAdd }) {
           <Tabs value={tab} onChange={setTab} options={[
             { value: 'search', label: 'Cerca', icon: 'search' },
             { value: 'barcode', label: 'Codice', icon: 'barcode' },
-            { value: 'photo', label: 'Foto', icon: 'camera' },
-            { value: 'ai', label: 'AI', icon: 'sparkle' },
+            { value: 'photo', label: 'Foto', icon: 'camera', disabled: true },
+            { value: 'ai', label: 'AI', icon: 'sparkle', disabled: true },
             { value: 'fav', label: 'Preferiti', icon: 'heart' },
           ]} />
           <div style={{ height: 14 }} />
@@ -220,22 +220,30 @@ function FoodRow({ food, onPick }) {
 function BarcodeTab({ onPick }) {
   const [scanning, setScanning] = useStateAM(false);
   const [found, setFound] = useStateAM(null);
+  const [quality, setQuality] = useStateAM(null);
+  const [manual, setManual] = useStateAM('');
   const [error, setError] = useStateAM(null);
-  const startScan = async () => {
+  const lookup = async (ean) => {
+    const code = (ean || '').trim();
+    if (!/^\d{8,14}$/.test(code)) {
+      setError('Inserisci un codice EAN da 8 a 14 cifre');
+      return;
+    }
     setError(null);
-    const ean = window.prompt('Inserisci il codice EAN (8-14 cifre):', '8076809513692');
-    if (!ean) return;
     setScanning(true);
     try {
-      const food = await window.api.foods.barcode(ean.trim());
+      const data = await window.api.foods.lookupBarcode(code);
+      const food = data.food;
       // Aggiungi a window.FOODS se non già presente, così onPick(id) lo trova
       if (food && !window.FOODS.find(f => f.id === food.id)) {
         window.FOODS = [...window.FOODS, food];
       }
       setFound(food);
+      setQuality(data.quality);
+      setManual(code);
     } catch (e) {
       console.error(e);
-      setError(e.status === 404 ? 'Prodotto non trovato su OpenFoodFacts' : 'Errore lookup');
+      setError(e.status === 404 ? 'Prodotto non trovato su Open Food Facts' : 'Errore lookup');
     } finally {
       setScanning(false);
     }
@@ -252,7 +260,7 @@ function BarcodeTab({ onPick }) {
               <FoodGlyph category={found.cat} size={48} />
               <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>Codice rilevato</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
-                8 0014{Math.floor(Math.random()*9000+1000)} 005
+                {manual}
               </div>
             </div>
           )}
@@ -273,8 +281,11 @@ function BarcodeTab({ onPick }) {
               </div>
             </div>
           </div>
+          <div style={{ marginTop: 12 }}>
+            <ProductQualityCard quality={quality} />
+          </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setFound(null); }}>
+            <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setFound(null); setQuality(null); }}>
               Riprova
             </button>
             <button className="btn btn-primary" style={{ flex: 1.4 }} onClick={() => onPick(found.id)}>
@@ -283,11 +294,22 @@ function BarcodeTab({ onPick }) {
           </div>
         </>
       ) : (
-        <button className="btn btn-accent" style={{ width: '100%', marginTop: 14, height: 46 }}
-                onClick={startScan} disabled={scanning}>
-          <Icon name="barcode" size={17} />
-          {scanning ? 'Lookup in corso…' : 'Inserisci codice a barre'}
-        </button>
+        <div className="barcode-manual">
+          <div className="search-wrap">
+            <Icon name="barcode" size={17} />
+            <input
+              className="search-input"
+              inputMode="numeric"
+              placeholder="EAN manuale"
+              value={manual}
+              onChange={e => setManual(e.target.value.replace(/\D/g, '').slice(0, 14))}
+              onKeyDown={e => { if (e.key === 'Enter') lookup(manual); }}
+            />
+          </div>
+          <button className="btn btn-accent" onClick={() => lookup(manual)} disabled={scanning}>
+            {scanning ? 'Cerco...' : 'Cerca'}
+          </button>
+        </div>
       )}
       {error && <div style={{ color: 'var(--accent)', fontSize: 12, marginTop: 8, textAlign: 'center' }}>{error}</div>}
       <p className="hint" style={{ marginTop: 12 }}>
@@ -295,6 +317,14 @@ function BarcodeTab({ onPick }) {
       </p>
       <style>{`
         .scan-wrap { padding-top: 4px; }
+        .barcode-manual { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 14px; }
+        .barcode-manual .search-wrap {
+          display: flex; align-items: center; gap: 8px; height: 42px;
+          padding: 0 12px; background: var(--surface);
+          border: 1px solid var(--line); border-radius: 12px; color: var(--ink-soft);
+        }
+        .barcode-manual .search-input { flex: 1; border: 0; background: transparent; outline: none;
+          font: inherit; color: var(--ink); font-size: 14px; min-width: 0; }
         .scanner { aspect-ratio: 4/3; background: #1a1612;
           border-radius: 16px; position: relative; overflow: hidden;
           display: grid; place-items: center;

@@ -1,79 +1,91 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import cors from "@fastify/cors";
-import rateLimit from "@fastify/rate-limit";
-import multipart from "@fastify/multipart";
 import { loadEnv } from "./env.js";
-import { registerErrorHandler } from "./lib/errors.js";
-import { meRoutes } from "./routes/me.js";
-import { goalsRoutes } from "./routes/goals.js";
-import { foodsRoutes } from "./routes/foods.js";
-import { mealsRoutes } from "./routes/meals.js";
-import { waterRoutes } from "./routes/water.js";
-import { favoritesRoutes } from "./routes/favorites.js";
-import { aiRoutes } from "./routes/ai.js";
-import { statsRoutes } from "./routes/stats.js";
-import { exportRoutes } from "./routes/export.js";
+import { isValidEan, lookupBarcode } from "./services/openfoodfacts.js";
 
-export async function buildApp(): Promise<FastifyInstance> {
+type AppRequest = {
+  method: string;
+  url: string;
+  body?: unknown;
+};
+
+export type AppResponse = {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+};
+
+const JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store",
+};
+
+export async function handleAppRequest(req: AppRequest): Promise<AppResponse> {
   const env = loadEnv();
-  const app = Fastify({
-    logger: {
-      level: process.env.NODE_ENV === "test" ? "warn" : "info",
-      redact: {
-        paths: [
-          "req.headers.authorization",
-          "req.body.password",
-          "req.body.description",
-        ],
-        remove: true,
+  const method = req.method.toUpperCase();
+  const url = new URL(req.url, "http://localhost");
+  const corsHeaders = cors(env.CORS_ORIGIN);
+
+  if (method === "OPTIONS") {
+    return {
+      status: 204,
+      headers: corsHeaders,
+      body: "",
+    };
+  }
+
+  if (method === "GET" && (url.pathname === "/health" || url.pathname === "/api/health")) {
+    return json(200, { ok: true }, corsHeaders);
+  }
+
+  if (method === "POST" && url.pathname === "/api/v1/barcode/lookup") {
+    const ean = readEan(req.body);
+    if (!ean || !isValidEan(ean)) {
+      return json(400, { error: "EAN deve essere 8-14 cifre" }, corsHeaders);
+    }
+
+    const result = await lookupBarcode(ean);
+    if (!result) {
+      return json(
+        404,
+        { error: "Prodotto non trovato su Open Food Facts" },
+        corsHeaders,
+      );
+    }
+
+    return json(
+      200,
+      result,
+      {
+        ...corsHeaders,
+        "cache-control": "public, s-maxage=86400, stale-while-revalidate=604800",
       },
-    },
-    bodyLimit: 6 * 1024 * 1024, // 6 MB: lascia margine sopra il 5MB delle immagini
-  });
+    );
+  }
 
-  registerErrorHandler(app);
+  return json(404, { error: "Endpoint non trovato" }, corsHeaders);
+}
 
-  // CORS
-  const corsOrigins =
-    env.CORS_ORIGIN === "*"
-      ? true
-      : env.CORS_ORIGIN.split(",").map((s) => s.trim());
-  await app.register(cors, {
-    origin: corsOrigins,
-    credentials: false,
-  });
+function readEan(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as { ean?: unknown }).ean;
+  return typeof value === "string" ? value.trim() : null;
+}
 
-  // Rate limit globale
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: "1 minute",
-  });
+function json(
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): AppResponse {
+  return {
+    status,
+    headers: { ...JSON_HEADERS, ...headers },
+    body: JSON.stringify(payload),
+  };
+}
 
-  // Multipart per image upload
-  await app.register(multipart, {
-    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
-  });
-
-  // Healthcheck — esposto anche sotto /api/v1 così Vercel (che route solo /api/*)
-  // ce l'ha senza configurazione extra. Lo lasciamo anche a /health per i test locali.
-  app.get("/health", async () => ({ ok: true }));
-
-  // Tutte le route sotto /api/v1
-  await app.register(
-    async (api) => {
-      api.get("/health", async () => ({ ok: true }));
-      await api.register(meRoutes);
-      await api.register(goalsRoutes);
-      await api.register(foodsRoutes);
-      await api.register(mealsRoutes);
-      await api.register(waterRoutes);
-      await api.register(favoritesRoutes);
-      await api.register(aiRoutes);
-      await api.register(statsRoutes);
-      await api.register(exportRoutes);
-    },
-    { prefix: "/api/v1" },
-  );
-
-  return app;
+function cors(origin: string): Record<string, string> {
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,accept",
+  };
 }

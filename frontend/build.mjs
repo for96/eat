@@ -2,7 +2,7 @@
 //
 // Strategia (stessa di Symplex):
 // 1. Concatena tutti i file src/ nell'ordine corretto (vedi SRC_ORDER).
-// 2. Trasforma JSX via esbuild → bundle.js (React resta esterno, caricato da CDN).
+// 2. Bundle JSX via esbuild → bundle.js (React resta esterno, ZXing viene incluso).
 // 3. Copia index.html → dist/ + asset statici (manifest, sw.js, icone).
 // 4. Genera icone PNG da SVG (con sharp) se mancano.
 //
@@ -29,6 +29,7 @@ const SERVE = process.argv.includes("--serve");
 // primitives usa Icon; addmeal/screens usano tutto; main monta l'App.
 const SRC_ORDER = [
   "tweaks-panel.jsx",
+  "seed-data.js",
   "data.js",
   "api.js",
   "icons.jsx",
@@ -45,13 +46,24 @@ async function concatSources() {
       return `// ───── ${name} ─────\n${content}`;
     }),
   );
-  return parts.join("\n\n");
+  return [
+    'import * as ZXingBrowser from "@zxing/browser";',
+    "window.ZXingBrowser = ZXingBrowser;",
+    ...parts,
+  ].join("\n\n");
 }
 
 async function bundle() {
   const source = await concatSources();
-  const result = await esbuild.transform(source, {
-    loader: "jsx",
+  const result = await esbuild.build({
+    stdin: {
+      contents: source,
+      resolveDir: ROOT,
+      loader: "jsx",
+    },
+    bundle: true,
+    write: false,
+    format: "iife",
     jsx: "transform",
     jsxFactory: "React.createElement",
     jsxFragment: "React.Fragment",
@@ -60,12 +72,15 @@ async function bundle() {
     sourcemap: !PROD,
     legalComments: "none",
   });
-  return result;
+  const js = result.outputFiles.find((file) => !file.path.endsWith(".map"));
+  const map = result.outputFiles.find((file) => file.path.endsWith(".js.map"));
+  return {
+    code: js?.text ?? "",
+    map: map?.text,
+  };
 }
 
 async function ensureIcons() {
-  // Le 3 icone PWA: 192, 512 (per Android/manifest), 180 (apple-touch-icon).
-  // Se manca anche una sola → rigeneriamole tutte da uno SVG inline.
   const targets = [
     { file: "icon-192.png", size: 192 },
     { file: "icon-512.png", size: 512 },
@@ -79,13 +94,11 @@ async function ensureIcons() {
     ({ default: sharp } = await import("sharp"));
   } catch {
     console.warn(
-      "  ⚠ sharp non installato — salto la generazione icone. Esegui `npm install` nella frontend/ poi rilancia.",
+      "  ! sharp non installato: salto la generazione icone. Esegui `npm install` in frontend/ poi rilancia.",
     );
     return;
   }
 
-  // Icona: "P" in italico color accento (#C25A3A) su sfondo crema (#F2ECDF).
-  // Match con la palette default "crema".
   const svg = Buffer.from(`
     <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
       <rect width="512" height="512" rx="112" fill="#F2ECDF"/>
@@ -96,7 +109,7 @@ async function ensureIcons() {
   `);
   for (const t of missing) {
     await sharp(svg).resize(t.size, t.size).png().toFile(path.join(PUBLIC, t.file));
-    console.log(`  ✓ generated public/${t.file}`);
+    console.log(`  generated public/${t.file}`);
   }
 }
 

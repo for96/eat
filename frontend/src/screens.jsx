@@ -650,10 +650,315 @@ function LegendItem({ color, label, pct, g }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// SCANNER SCREEN
+// ════════════════════════════════════════════════════════════════════════
+function ScannerScreen({ onFoodReady, onAddProduct }) {
+  const [manual, setManual] = useStateSc('');
+  const [status, setStatus] = useStateSc('idle'); // idle | camera | lookup | result | error
+  const [message, setMessage] = useStateSc('');
+  const [result, setResult] = useStateSc(null);
+  const [slot, setSlot] = useStateSc('pranzo');
+  const [added, setAdded] = useStateSc(false);
+  const videoRef = useRefSc(null);
+  const controlsRef = useRefSc(null);
+  const readerRef = useRefSc(null);
+  const lastCodeRef = useRefSc('');
+
+  useEffectSc(() => () => stopCamera(), []);
+
+  const lookup = async (ean) => {
+    const code = (ean || '').trim();
+    if (!/^\d{8,14}$/.test(code)) {
+      setStatus('error');
+      setMessage('Inserisci un codice EAN da 8 a 14 cifre');
+      return;
+    }
+    if (status === 'lookup' && lastCodeRef.current === code) return;
+    lastCodeRef.current = code;
+    setStatus('lookup');
+    setMessage('');
+    setAdded(false);
+    try {
+      const data = await window.api.foods.lookupBarcode(code);
+      setResult(data);
+      setManual(code);
+      setStatus('result');
+      onFoodReady && onFoodReady(data.food);
+      stopCamera();
+    } catch (e) {
+      setStatus('error');
+      setMessage(e.status === 404 ? 'Prodotto non trovato su Open Food Facts' : 'Lookup non riuscito');
+    }
+  };
+
+  const startCamera = async () => {
+    setMessage('');
+    setStatus('camera');
+    const Reader = getZXingReader();
+    if (!Reader || !navigator.mediaDevices?.getUserMedia) {
+      setStatus('error');
+      setMessage('Scanner camera non disponibile qui. Puoi inserire il codice manualmente.');
+      return;
+    }
+    try {
+      readerRef.current = new Reader();
+      controlsRef.current = await readerRef.current.decodeFromVideoDevice(
+        undefined,
+        videoRef.current,
+        (scanResult) => {
+          const text = scanResult && (scanResult.getText ? scanResult.getText() : scanResult.text);
+          if (text && /^\d{8,14}$/.test(String(text))) lookup(String(text));
+        },
+      );
+    } catch (e) {
+      setStatus('error');
+      setMessage('Permesso camera negato o non disponibile. Usa inserimento manuale.');
+    }
+  };
+
+  function stopCamera() {
+    if (controlsRef.current?.stop) controlsRef.current.stop();
+    controlsRef.current = null;
+    if (videoRef.current?.srcObject) {
+      for (const track of videoRef.current.srcObject.getTracks()) track.stop();
+      videoRef.current.srcObject = null;
+    }
+    if (readerRef.current?.reset) readerRef.current.reset();
+  }
+
+  const addProduct = () => {
+    if (!result?.food || !onAddProduct) return;
+    onAddProduct(slot, result.food);
+    setAdded(true);
+  };
+
+  return (
+    <div className="scanner-page">
+      <header className="scanner-head">
+        <div>
+          <div className="eyebrow">Scanner</div>
+          <h1 className="scanner-title display">Qualità prodotto</h1>
+        </div>
+      </header>
+
+      <section className={`scanner-stage ${status}`}>
+        <video ref={videoRef} className="scanner-video" muted playsInline />
+        {(status !== 'camera' && status !== 'lookup') && (
+          <div className="scanner-placeholder">
+            <Icon name="barcode" size={52} stroke={1.35} />
+            <div className="scanner-placeholder-title">Scansiona un codice EAN</div>
+            <div className="scanner-placeholder-sub">La qualità viene calcolata da Open Food Facts</div>
+          </div>
+        )}
+        {status === 'camera' && <div className="scanner-line" />}
+        {status === 'lookup' && (
+          <div className="scanner-loading">
+            <span className="dot-pulse" />
+            Cerco il prodotto...
+          </div>
+        )}
+      </section>
+
+      <div className="scanner-actions">
+        <button className="btn btn-accent" onClick={startCamera} disabled={status === 'camera' || status === 'lookup'}>
+          <Icon name="camera" size={17} /> Camera
+        </button>
+        <button className="btn btn-outline" onClick={stopCamera}>
+          <Icon name="close" size={17} /> Stop
+        </button>
+      </div>
+
+      <div className="scan-manual">
+        <div className="search-wrap">
+          <Icon name="barcode" size={17} />
+          <input
+            className="search-input"
+            inputMode="numeric"
+            placeholder="EAN manuale"
+            value={manual}
+            onChange={e => setManual(e.target.value.replace(/\D/g, '').slice(0, 14))}
+            onKeyDown={e => { if (e.key === 'Enter') lookup(manual); }}
+          />
+        </div>
+        <button className="btn btn-primary" onClick={() => lookup(manual)} disabled={status === 'lookup'}>
+          Cerca
+        </button>
+      </div>
+
+      {message && <div className="scan-message">{message}</div>}
+
+      {result && (
+        <div className="scanner-result">
+          <ProductSummary food={result.food} />
+          <ProductQualityCard quality={result.quality} />
+          <div className="scanner-add">
+            <SlotPicker slot={slot} onChange={setSlot} />
+            <button className="btn btn-primary" style={{ width: '100%', height: 46, marginTop: 12 }}
+                    onClick={addProduct}>
+              <Icon name={added ? 'check' : 'plus'} size={17} />
+              {added ? 'Aggiunto' : `Aggiungi 100g a ${SLOT_LABEL[slot].toLowerCase()}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .scanner-page { padding: 12px 18px 16px; }
+        .scanner-head { padding: 6px 100px 16px 0; }
+        .scanner-title { font-size: 26px; font-style: italic; font-weight: 400; line-height: 1.1;
+          margin: 4px 0 0; text-transform: lowercase; color: var(--ink); letter-spacing: -0.01em; }
+        body[data-type="moderno"] .scanner-title { font-style: normal; font-weight: 600; text-transform: none; letter-spacing: -.02em; }
+
+        .scanner-stage { aspect-ratio: 4/3; background: #1a1612; border-radius: 18px; overflow: hidden;
+          position: relative; display: grid; place-items: center; color: rgba(255,255,255,0.76);
+          border: 1px solid var(--line); }
+        .scanner-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .scanner-placeholder { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;
+          text-align: center; padding: 20px; }
+        .scanner-placeholder-title { font-size: 14px; font-weight: 500; margin-top: 10px; }
+        .scanner-placeholder-sub { font-size: 12px; color: rgba(255,255,255,0.62); margin-top: 3px; }
+        .scanner-line { position: absolute; z-index: 2; left: 12%; right: 12%; top: 50%; height: 2px;
+          background: linear-gradient(90deg, transparent, var(--accent), transparent);
+          box-shadow: 0 0 14px var(--accent); animation: scan-sweep 1.5s ease-in-out infinite alternate; }
+        .scanner-loading { position: relative; z-index: 3; background: rgba(255,255,255,0.94); color: var(--ink);
+          border-radius: 999px; padding: 9px 14px; display: inline-flex; align-items: center; gap: 16px;
+          font-size: 12.5px; }
+        @keyframes scan-sweep { from { top: 18%; } to { top: 82%; } }
+
+        .scanner-actions { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; margin-top: 12px; }
+        .scan-manual { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 10px; }
+        .scan-manual .search-wrap {
+          display: flex; align-items: center; gap: 8px; height: 42px;
+          padding: 0 12px; background: var(--surface);
+          border: 1px solid var(--line); border-radius: 12px; color: var(--ink-soft);
+        }
+        .scan-manual .search-input { flex: 1; border: 0; background: transparent; outline: none;
+          font: inherit; color: var(--ink); font-size: 14px; min-width: 0; }
+        .scan-message { color: var(--accent); text-align: center; font-size: 12px; margin-top: 10px; }
+        .scanner-result { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+        .scanner-add { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+        .dot-pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+          box-shadow: 10px 0 0 currentColor, -10px 0 0 currentColor;
+          animation: dot-pulse 1.2s infinite; opacity: 0.6; }
+        @keyframes dot-pulse {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.3); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function getZXingReader() {
+  const zxing = window.ZXingBrowser || window.ZXing;
+  return zxing && zxing.BrowserMultiFormatReader;
+}
+
+function ProductSummary({ food }) {
+  return (
+    <div className="product-summary">
+      {food.image_url ? (
+        <img src={food.image_url} alt="" className="product-img" />
+      ) : (
+        <FoodGlyph category={food.cat} size={54} />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="product-name">{food.name}</div>
+        <div className="product-meta">
+          {food.brand ? `${food.brand} · ` : ''}
+          <span className="num">{food.kcal}</span> kcal / 100g
+        </div>
+      </div>
+      <style>{`
+        .product-summary { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 14px; display: flex; align-items: center; gap: 12px; }
+        .product-img { width: 54px; height: 54px; border-radius: 14px; object-fit: cover; background: var(--surface-2);
+          border: 1px solid var(--line-soft); flex-shrink: 0; }
+        .product-name { font-size: 15px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .product-meta { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+      `}</style>
+    </div>
+  );
+}
+
+function ProductQualityCard({ quality }) {
+  if (!quality) return null;
+  const grade = {
+    excellent: ['Eccellente', 'var(--fat)'],
+    good: ['Buono', 'var(--fiber)'],
+    fair: ['Medio', 'var(--carbs)'],
+    poor: ['Scarso', 'var(--accent)'],
+    unknown: ['Dati parziali', 'var(--ink-soft)'],
+  }[quality.grade] || ['Dati parziali', 'var(--ink-soft)'];
+
+  return (
+    <div className="quality-card">
+      <div className="quality-top">
+        <Ring size={96} stroke={8} tracks={[{ value: quality.score / 100, color: grade[1], bg: 'var(--line-soft)' }]}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="display num" style={{ fontSize: 28, lineHeight: 1, color: grade[1] }}>{quality.score}</div>
+            <div style={{ fontSize: 10, color: 'var(--ink-soft)', marginTop: 2 }}>/100</div>
+          </div>
+        </Ring>
+        <div style={{ flex: 1 }}>
+          <div className="eyebrow">Qualità</div>
+          <div className="display quality-grade" style={{ color: grade[1] }}>{grade[0]}</div>
+          <div className="quality-tags">
+            <Pill color={grade[1]} soft>Nutri {quality.nutriScore ? quality.nutriScore.toUpperCase() : 'n/d'}</Pill>
+            <Pill color="var(--ink-soft)" soft>NOVA {quality.novaGroup || 'n/d'}</Pill>
+            <Pill color="var(--water)" soft>Eco {quality.ecoScore ? quality.ecoScore.toUpperCase() : 'n/d'}</Pill>
+          </div>
+        </div>
+      </div>
+
+      <QualityList title="Punti positivi" items={quality.positives} tone="good" empty="Nessun punto positivo evidente" />
+      <QualityList title="Da controllare" items={quality.negatives} tone="bad" empty="Nessun punto critico evidente" />
+      <QualityList title="Dati mancanti" items={quality.warnings} tone="warn" empty="Dati principali disponibili" />
+
+      <style>{`
+        .quality-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 16px; }
+        .quality-top { display: flex; gap: 16px; align-items: center; padding-bottom: 14px;
+          border-bottom: 1px solid var(--line-soft); margin-bottom: 12px; }
+        .quality-grade { font-size: 26px; font-style: italic; line-height: 1.05; margin-top: 4px; }
+        body[data-type="moderno"] .quality-grade { font-style: normal; font-weight: 600; }
+        .quality-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      `}</style>
+    </div>
+  );
+}
+
+function QualityList({ title, items, tone, empty }) {
+  const color = tone === 'good' ? 'var(--fat)' : tone === 'bad' ? 'var(--accent)' : 'var(--ink-soft)';
+  const list = items && items.length ? items : [empty];
+  return (
+    <div className="quality-list">
+      <div className="eyebrow" style={{ color }}>{title}</div>
+      <div className="quality-list-items">
+        {list.map((item, i) => (
+          <div key={i} className={`quality-item ${items && items.length ? '' : 'empty'}`}>
+            <span style={{ background: color }} />
+            {item}
+          </div>
+        ))}
+      </div>
+      <style>{`
+        .quality-list { margin-top: 10px; }
+        .quality-list-items { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+        .quality-item { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; color: var(--ink-2); }
+        .quality-item.empty { color: var(--ink-soft); font-style: italic; }
+        .quality-item > span { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; transform: translateY(-1px); }
+      `}</style>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // PROFILE / SETTINGS
 // ════════════════════════════════════════════════════════════════════════
-function ProfileScreen({ goals, onGoalsChange }) {
+function ProfileScreen({ goals, onGoalsChange, history = {}, scans = [] }) {
   const setG = (key, v) => onGoalsChange({ ...goals, [key]: v });
+  const [section, setSection] = useStateSc('goals');
 
   // macro split %
   const splitTotal = goals.p * 4 + goals.c * 4 + goals.fat * 9;
@@ -666,7 +971,9 @@ function ProfileScreen({ goals, onGoalsChange }) {
       <header className="prof-head">
         <div>
           <div className="eyebrow">Profilo</div>
-          <h1 className="prof-title display">Obiettivi giornalieri</h1>
+          <h1 className="prof-title display">
+            {section === 'goals' ? 'Obiettivi giornalieri' : section === 'history' ? 'Storico' : 'Scansioni'}
+          </h1>
         </div>
       </header>
 
@@ -679,36 +986,54 @@ function ProfileScreen({ goals, onGoalsChange }) {
         <Icon name="edit" size={16} style={{ color: 'var(--ink-faint)' }} />
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <div className="eyebrow">Calorie</div>
-          <span className="display num" style={{ fontSize: 22 }}>{goals.kcal}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> kcal</span></span>
-        </div>
-        <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={v => setG('kcal', v)} />
+      <div className="profile-tabs">
+        <button className={section === 'goals' ? 'on' : ''} onClick={() => setSection('goals')}>Obiettivi</button>
+        <button className={section === 'history' ? 'on' : ''} onClick={() => setSection('history')}>Storico</button>
+        <button className={section === 'scans' ? 'on' : ''} onClick={() => setSection('scans')}>Scansioni</button>
       </div>
 
-      <div className="card" style={{ marginTop: 12 }}>
-        <div className="eyebrow" style={{ marginBottom: 12 }}>Macronutrienti</div>
-        <div className="macro-stack" style={{ height: 14, borderRadius: 7, overflow: 'hidden', display: 'flex', background: 'var(--surface-2)' }}>
-          <div style={{ width: `${pPct}%`, background: 'var(--protein)' }} />
-          <div style={{ width: `${cPct}%`, background: 'var(--carbs)' }} />
-          <div style={{ width: `${fPct}%`, background: 'var(--fat)' }} />
-        </div>
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <MacroGoalRow label="Proteine" color="var(--protein)" value={goals.p} pct={pPct} max={250} onChange={v => setG('p', v)} />
-          <MacroGoalRow label="Carboidrati" color="var(--carbs)" value={goals.c} pct={cPct} max={500} onChange={v => setG('c', v)} />
-          <MacroGoalRow label="Grassi" color="var(--fat)" value={goals.fat} pct={fPct} max={200} onChange={v => setG('fat', v)} />
-          <MacroGoalRow label="Fibre" color="var(--fiber)" value={goals.fb} max={60} onChange={v => setG('fb', v)} />
-        </div>
-      </div>
+      {section === 'goals' && (
+        <>
+          <div className="card" style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div className="eyebrow">Calorie</div>
+              <span className="display num" style={{ fontSize: 22 }}>{goals.kcal}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> kcal</span></span>
+            </div>
+            <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={v => setG('kcal', v)} />
+          </div>
 
-      <div className="card" style={{ marginTop: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <div className="eyebrow">Acqua</div>
-          <span className="display num" style={{ fontSize: 22 }}>{(goals.water_ml/1000).toFixed(1)}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> L</span></span>
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>Macronutrienti</div>
+            <div className="macro-stack" style={{ height: 14, borderRadius: 7, overflow: 'hidden', display: 'flex', background: 'var(--surface-2)' }}>
+              <div style={{ width: `${pPct}%`, background: 'var(--protein)' }} />
+              <div style={{ width: `${cPct}%`, background: 'var(--carbs)' }} />
+              <div style={{ width: `${fPct}%`, background: 'var(--fat)' }} />
+            </div>
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <MacroGoalRow label="Proteine" color="var(--protein)" value={goals.p} pct={pPct} max={250} onChange={v => setG('p', v)} />
+              <MacroGoalRow label="Carboidrati" color="var(--carbs)" value={goals.c} pct={cPct} max={500} onChange={v => setG('c', v)} />
+              <MacroGoalRow label="Grassi" color="var(--fat)" value={goals.fat} pct={fPct} max={200} onChange={v => setG('fat', v)} />
+              <MacroGoalRow label="Fibre" color="var(--fiber)" value={goals.fb} max={60} onChange={v => setG('fb', v)} />
+            </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div className="eyebrow">Acqua</div>
+              <span className="display num" style={{ fontSize: 22 }}>{(goals.water_ml/1000).toFixed(1)}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> L</span></span>
+            </div>
+            <SliderRow value={goals.water_ml} min={1000} max={4000} step={250} onChange={v => setG('water_ml', v)} color="var(--water)" />
+          </div>
+        </>
+      )}
+
+      {section === 'history' && (
+        <div className="profile-embedded">
+          <CalendarScreen history={history} goals={goals} />
         </div>
-        <SliderRow value={goals.water_ml} min={1000} max={4000} step={250} onChange={v => setG('water_ml', v)} color="var(--water)" />
-      </div>
+      )}
+
+      {section === 'scans' && <ScansProfileView scans={scans} />}
 
       <div style={{ height: 80 }} />
 
@@ -725,9 +1050,68 @@ function ProfileScreen({ goals, onGoalsChange }) {
           background: var(--accent); color: #fff;
           display: grid; place-items: center;
           font-family: var(--font-display); font-size: 22px; font-style: italic; }
+        .profile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+          background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+          padding: 4px; margin-top: 12px; }
+        .profile-tabs button { appearance: none; border: 0; background: transparent; color: var(--ink-soft);
+          border-radius: 8px; padding: 8px 6px; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+        .profile-tabs button.on { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(31,27,22,.06); }
+        .profile-embedded { margin: 4px -18px 0; }
       `}</style>
     </div>
   );
+}
+
+function ScansProfileView({ scans }) {
+  if (!scans || scans.length === 0) {
+    return (
+      <div className="scan-empty card" style={{ marginTop: 14, textAlign: 'center', color: 'var(--ink-soft)' }}>
+        <Icon name="barcode" size={30} stroke={1.4} />
+        <div style={{ fontSize: 13, marginTop: 8, fontStyle: 'italic' }}>Nessuna scansione ancora salvata</div>
+      </div>
+    );
+  }
+  return (
+    <div className="profile-scans">
+      {scans.map(scan => (
+        <div key={scan.id} className="scan-row-profile">
+          {scan.image_url ? (
+            <img src={scan.image_url} alt="" />
+          ) : (
+            <FoodGlyph category="Generico" size={42} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="scan-row-name">{scan.foodName}</div>
+            <div className="scan-row-meta">
+              {scan.brand ? `${scan.brand} · ` : ''}
+              {new Date(scan.scannedAt).toLocaleDateString('it-IT')}
+            </div>
+          </div>
+          <Pill color={qualityColor(scan.quality?.grade)} soft>
+            <span className="num">{scan.quality?.score ?? '--'}</span>
+          </Pill>
+        </div>
+      ))}
+      <style>{`
+        .profile-scans { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+        .scan-row-profile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          padding: 10px 12px; display: flex; align-items: center; gap: 12px; }
+        .scan-row-profile img { width: 42px; height: 42px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line-soft); }
+        .scan-row-name { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .scan-row-meta { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+      `}</style>
+    </div>
+  );
+}
+
+function qualityColor(grade) {
+  return {
+    excellent: 'var(--fat)',
+    good: 'var(--fiber)',
+    fair: 'var(--carbs)',
+    poor: 'var(--accent)',
+    unknown: 'var(--ink-soft)',
+  }[grade] || 'var(--ink-soft)';
 }
 
 function SliderRow({ value, min, max, step, onChange, color }) {
@@ -778,4 +1162,12 @@ function MacroGoalRow({ label, color, value, pct, max, onChange }) {
   );
 }
 
-Object.assign(window, { TodayScreen, CalendarScreen, StatsScreen, ProfileScreen, MealCard });
+Object.assign(window, {
+  TodayScreen,
+  CalendarScreen,
+  StatsScreen,
+  ScannerScreen,
+  ProfileScreen,
+  MealCard,
+  ProductQualityCard,
+});

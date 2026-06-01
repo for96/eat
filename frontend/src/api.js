@@ -1,13 +1,9 @@
-// api.js — client REST per il backend Pasto.
-// Versione single-user: nessun token, ogni richiesta va dritta agli endpoint.
-// Quando aggiungerai login, basterà aggiungere gestione token qui dentro.
+// api.js - local-first adapter. Il backend resta solo un proxy leggero
+// per Open Food Facts e future API key.
 
 (function () {
-  // Base URL del backend:
-  // - In produzione (Vercel) frontend e backend stanno sullo stesso dominio → relativo "/api/v1".
-  // - In dev locale frontend gira su un'altra porta (es. 5173) e il backend su 3000:
-  //   si setta window.PASTO_API_BASE = 'http://localhost:3000' nell'index.html dev,
-  //   oppure si lascia che venga auto-rilevato qui sotto.
+  const STORAGE_KEY = 'pasto.local.v2';
+  const MAX_SCANS = 60;
   const isLocalDev =
     typeof location !== 'undefined' &&
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
@@ -15,139 +11,389 @@
   const explicit = typeof window !== 'undefined' ? window.PASTO_API_BASE : undefined;
   const BASE = (explicit ?? (isLocalDev ? 'http://localhost:3000' : '')) + '/api/v1';
 
+  const seed = window.PASTO_SEED || { foods: [], favorites: [], default_goals: window.DEFAULT_GOALS };
+
+  function normalizeFood(f) {
+    return {
+      id: f.id,
+      source: f.source || 'seed',
+      external_id: f.external_id || f.externalId || null,
+      name: f.name,
+      cat: f.cat || f.category || 'Generico',
+      category: f.category || f.cat || 'Generico',
+      kcal: +(f.kcal ?? f.kcal_100 ?? 0),
+      p: +(f.p ?? f.protein_100 ?? 0),
+      c: +(f.c ?? f.carbs_100 ?? 0),
+      f: +(f.f ?? f.fat_100 ?? 0),
+      fb: +(f.fb ?? f.fiber_100 ?? 0),
+      sg: +(f.sg ?? f.sugars_100 ?? 0),
+      sf: +(f.sf ?? f.sat_fat_100 ?? 0),
+      unit: f.unit || 'g',
+      serving: +(f.serving ?? f.default_serving ?? 100),
+      per_unit_g: f.per_unit_g ?? null,
+      brand: f.brand ?? null,
+      image_url: f.image_url ?? f.imageUrl ?? null,
+    };
+  }
+
+  function normalizeFavorite(fav) {
+    return {
+      id: fav.id,
+      name: fav.name,
+      items: (fav.items || []).map((item) => {
+        if (Array.isArray(item)) {
+          return { foodId: item[0], qty: item[1], unit: item[2] || null };
+        }
+        return {
+          foodId: item.foodId,
+          qty: item.qty,
+          unit: item.unit || null,
+        };
+      }),
+      createdAt: fav.createdAt || new Date().toISOString(),
+    };
+  }
+
+  function initialState() {
+    return {
+      version: 2,
+      goals: { ...(seed.default_goals || window.DEFAULT_GOALS) },
+      foods: (seed.foods || []).map(normalizeFood),
+      favorites: (seed.favorites || []).map(normalizeFavorite),
+      history: {},
+      scans: [],
+    };
+  }
+
+  function readState() {
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    } catch {}
+
+    const base = initialState();
+    if (!stored || stored.version !== 2) return base;
+
+    const foodMap = new Map(base.foods.map((f) => [f.id, f]));
+    for (const food of stored.foods || []) {
+      foodMap.set(food.id, normalizeFood(food));
+    }
+    return {
+      ...base,
+      ...stored,
+      foods: [...foodMap.values()],
+      favorites: (stored.favorites || base.favorites).map(normalizeFavorite),
+      history: stored.history || {},
+      scans: stored.scans || [],
+    };
+  }
+
+  let state = readState();
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn('Persistenza locale non disponibile:', e);
+    }
+  }
+
+  function syncGlobals() {
+    window.FOODS = state.foods.map(normalizeFood);
+    window.FAVORITES = state.favorites.map((fav) => ({
+      id: fav.id,
+      name: fav.name,
+      items: fav.items.map((it) => {
+        const row = [it.foodId, it.qty];
+        if (it.unit) row.push(it.unit);
+        return row;
+      }),
+    }));
+  }
+
+  function ensureDay(date) {
+    if (!state.history[date]) {
+      state.history[date] = {
+        colazione: [],
+        pranzo: [],
+        cena: [],
+        spuntini: [],
+        water_ml: 0,
+      };
+    }
+    return state.history[date];
+  }
+
+  function flattenEntries(from, to) {
+    const entries = [];
+    for (const [date, day] of Object.entries(state.history)) {
+      if (from && date < from) continue;
+      if (to && date > to) continue;
+      for (const slot of ['colazione', 'pranzo', 'cena', 'spuntini']) {
+        for (const entry of day[slot] || []) {
+          entries.push({ ...entry, date, slot });
+        }
+      }
+    }
+    return entries.sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
+  }
+
+  function entrySnapshot(food, qty, unit, source) {
+    const grams = window.servingToGrams(food, qty);
+    const macros = window.computeMacros(food.id, grams);
+    return {
+      id: 'e_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+      foodId: food.id,
+      qty,
+      unit: unit || food.unit,
+      grams,
+      kcal: macros.kcal,
+      p: macros.p,
+      c: macros.c,
+      fat: macros.fat,
+      fb: macros.fb,
+      sg: macros.sg,
+      sf: macros.sf,
+      source,
+    };
+  }
+
   async function req(method, path, body) {
     const opts = {
       method,
       headers: { Accept: 'application/json' },
     };
-    if (body !== undefined && !(body instanceof FormData)) {
+    if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
-    } else if (body instanceof FormData) {
-      opts.body = body;
     }
     const res = await fetch(BASE + path, opts);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      const err = new Error(`API ${method} ${path} → ${res.status}: ${text || res.statusText}`);
+      const err = new Error(`API ${method} ${path} -> ${res.status}: ${text || res.statusText}`);
       err.status = res.status;
       throw err;
     }
-    if (res.status === 204) return null;
-    const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return res.json();
-    return res.text();
+    return res.json();
   }
 
-  // Converte un food del backend (snake_case) nella shape window.FOODS (camelCase corto)
-  // usata dal frontend esistente.
-  function adaptFood(f) {
-    return {
-      id: f.id,
-      name: f.name,
-      cat: f.cat || f.category,
-      kcal: f.kcal ?? f.kcal_100,
-      p: f.p ?? f.protein_100,
-      c: f.c ?? f.carbs_100,
-      f: f.f ?? f.fat_100,
-      fb: f.fb ?? f.fiber_100 ?? 0,
-      sg: f.sg ?? f.sugars_100 ?? 0,
-      sf: f.sf ?? f.sat_fat_100 ?? 0,
-      unit: f.unit,
-      serving: f.serving ?? f.default_serving,
-      per_unit_g: f.per_unit_g,
-      brand: f.brand,
-      image_url: f.image_url,
-      source: f.source,
-    };
+  async function lookupBarcode(ean) {
+    const data = await req('POST', '/barcode/lookup', { ean });
+    const food = normalizeFood(data.food);
+    state.foods = [...state.foods.filter((f) => f.id !== food.id), food];
+    state.scans = [
+      {
+        id: 'scan_' + Date.now(),
+        ean,
+        foodId: food.id,
+        foodName: food.name,
+        brand: food.brand,
+        image_url: food.image_url,
+        quality: data.quality,
+        scannedAt: new Date().toISOString(),
+      },
+      ...state.scans,
+    ].slice(0, MAX_SCANS);
+    save();
+    syncGlobals();
+    return { food, quality: data.quality };
   }
 
-  function adaptEntry(e) {
-    return {
-      id: e.id,
-      foodId: e.foodId,
-      qty: e.qty,
-      unit: e.unit,
-      grams: e.grams,
-      // NB: lo storico nel frontend usa computeMacros dal Food corrente;
-      // qui i macros snapshottati sono comunque disponibili come riferimento.
-      _snapshot: { kcal: e.kcal, p: e.p, c: e.c, fat: e.fat, fb: e.fb, sg: e.sg, sf: e.sf },
-      source: e.source,
-    };
+  function resetLocalData() {
+    state = initialState();
+    save();
+    syncGlobals();
+    return state;
   }
+
+  syncGlobals();
 
   window.api = {
     base: BASE,
     req,
-    adaptFood,
-    adaptEntry,
-
-    me: () => req('GET', '/me'),
-
+    normalizeFood,
+    boot: async () => {
+      syncGlobals();
+      return {
+        foods: state.foods,
+        favorites: state.favorites,
+        goals: state.goals,
+        history: state.history,
+        scans: state.scans,
+      };
+    },
+    local: {
+      state: () => state,
+      reset: resetLocalData,
+      scans: () => state.scans,
+    },
+    me: async () => ({ user: { id: 'local-user', name: 'Marco' } }),
     goals: {
-      get: () => req('GET', '/goals'),
-      put: (partial) => req('PUT', '/goals', partial),
-    },
-
-    foods: {
-      search: (q = '', limit = 30) =>
-        req('GET', `/foods/search?q=${encodeURIComponent(q)}&limit=${limit}`).then(
-          (r) => (r.foods || []).map(adaptFood)
-        ),
-      get: (id) => req('GET', `/foods/${encodeURIComponent(id)}`).then((r) => adaptFood(r.food)),
-      barcode: (ean) =>
-        req('POST', '/foods/barcode', { ean }).then((r) => adaptFood(r.food)),
-      create: (body) => req('POST', '/foods', body).then((r) => adaptFood(r.food)),
-    },
-
-    meals: {
-      forDate: (date) => req('GET', `/meals/${date}`),
-      range: (from, to) => req('GET', `/meals?from=${from}&to=${to}`),
-      add: ({ date, slot, foodId, qty, unit, source = 'manual' }) =>
-        req('POST', '/meals', {
-          date,
-          slot,
-          food_id: foodId,
-          qty,
-          unit,
-          source,
-        }).then((r) => r.entry),
-      patch: (id, patch) =>
-        req('PATCH', `/meals/${id}`, patch).then((r) => r.entry),
-      remove: (id) => req('DELETE', `/meals/${id}`),
-    },
-
-    water: {
-      get: (date) => req('GET', `/water/${date}`),
-      put: (date, ml) => req('PUT', `/water/${date}`, { ml }),
-      delta: (date, delta) => req('POST', `/water/${date}/delta`, { delta }),
-    },
-
-    favorites: {
-      list: () => req('GET', '/favorites').then((r) => r.favorites),
-      create: (name, items) => req('POST', '/favorites', { name, items }),
-      remove: (id) => req('DELETE', `/favorites/${id}`),
-      apply: (id, date, slot) =>
-        req('POST', `/favorites/${id}/apply`, { date, slot }),
-    },
-
-    ai: {
-      estimateText: (description) =>
-        req('POST', '/ai/estimate-text', { description }),
-      estimateImage: (file) => {
-        const fd = new FormData();
-        fd.append('image', file);
-        return req('POST', '/ai/estimate-image', fd);
+      get: async () => ({
+        kcal: state.goals.kcal,
+        protein_g: state.goals.p,
+        carbs_g: state.goals.c,
+        fat_g: state.goals.fat,
+        fiber_g: state.goals.fb,
+        water_ml: state.goals.water_ml,
+      }),
+      put: async (partial) => {
+        state.goals = {
+          ...state.goals,
+          ...(partial.kcal !== undefined && { kcal: partial.kcal }),
+          ...(partial.protein_g !== undefined && { p: partial.protein_g }),
+          ...(partial.carbs_g !== undefined && { c: partial.carbs_g }),
+          ...(partial.fat_g !== undefined && { fat: partial.fat_g }),
+          ...(partial.fiber_g !== undefined && { fb: partial.fiber_g }),
+          ...(partial.water_ml !== undefined && { water_ml: partial.water_ml }),
+        };
+        save();
+        return window.api.goals.get();
       },
     },
-
+    foods: {
+      search: async (q = '', limit = 30) => {
+        const query = q.trim().toLowerCase();
+        const foods = query
+          ? state.foods.filter((f) =>
+              f.name.toLowerCase().includes(query) ||
+              f.cat.toLowerCase().includes(query) ||
+              (f.brand || '').toLowerCase().includes(query)
+            )
+          : state.foods;
+        return foods.slice(0, limit).map(normalizeFood);
+      },
+      get: async (id) => normalizeFood(state.foods.find((f) => f.id === id)),
+      barcode: async (ean) => {
+        const { food } = await lookupBarcode(ean);
+        return food;
+      },
+      lookupBarcode,
+      create: async (body) => {
+        const food = normalizeFood({
+          ...body,
+          id: 'user-' + Date.now(),
+          source: 'user',
+          kcal: body.kcal_100,
+          p: body.protein_100,
+          c: body.carbs_100,
+          f: body.fat_100,
+          fb: body.fiber_100 || 0,
+          sg: body.sugars_100 || 0,
+          sf: body.sat_fat_100 || 0,
+          cat: body.category,
+          serving: body.default_serving,
+        });
+        state.foods = [...state.foods, food];
+        save();
+        syncGlobals();
+        return food;
+      },
+    },
+    meals: {
+      forDate: async (date) => ({ date, slots: ensureDay(date), water_ml: ensureDay(date).water_ml }),
+      range: async (from, to) => ({ entries: flattenEntries(from, to) }),
+      add: async ({ date, slot, foodId, qty, unit, source = 'manual' }) => {
+        const food = state.foods.find((f) => f.id === foodId);
+        if (!food) throw new Error(`Food ${foodId} non trovato`);
+        const day = ensureDay(date);
+        const entry = entrySnapshot(food, qty, unit, source);
+        day[slot] = [...(day[slot] || []), entry];
+        save();
+        return entry;
+      },
+      patch: async (id, patch) => {
+        for (const day of Object.values(state.history)) {
+          for (const slot of ['colazione', 'pranzo', 'cena', 'spuntini']) {
+            const idx = (day[slot] || []).findIndex((entry) => entry.id === id);
+            if (idx < 0) continue;
+            const current = day[slot][idx];
+            const food = state.foods.find((f) => f.id === current.foodId);
+            const nextSlot = patch.slot || slot;
+            const next = entrySnapshot(food, patch.qty ?? current.qty, patch.unit || current.unit, current.source);
+            next.id = id;
+            day[slot].splice(idx, 1);
+            day[nextSlot] = [...(day[nextSlot] || []), next];
+            save();
+            return next;
+          }
+        }
+        throw new Error('Pasto non trovato');
+      },
+      remove: async (id) => {
+        for (const day of Object.values(state.history)) {
+          for (const slot of ['colazione', 'pranzo', 'cena', 'spuntini']) {
+            day[slot] = (day[slot] || []).filter((entry) => entry.id !== id);
+          }
+        }
+        save();
+        return null;
+      },
+    },
+    water: {
+      get: async (date) => ({ date, ml: ensureDay(date).water_ml || 0 }),
+      put: async (date, ml) => {
+        ensureDay(date).water_ml = Math.max(0, ml);
+        save();
+        return { date, ml: ensureDay(date).water_ml };
+      },
+      delta: async (date, delta) => {
+        const day = ensureDay(date);
+        day.water_ml = Math.max(0, (day.water_ml || 0) + delta);
+        save();
+        return { date, ml: day.water_ml };
+      },
+    },
+    favorites: {
+      list: async () => state.favorites,
+      create: async (name, items) => {
+        const favorite = normalizeFavorite({
+          id: 'fav_' + Date.now(),
+          name,
+          items,
+          createdAt: new Date().toISOString(),
+        });
+        state.favorites = [...state.favorites, favorite];
+        save();
+        syncGlobals();
+        return favorite;
+      },
+      remove: async (id) => {
+        state.favorites = state.favorites.filter((fav) => fav.id !== id);
+        save();
+        syncGlobals();
+        return null;
+      },
+      apply: async (id, date, slot) => {
+        const fav = state.favorites.find((f) => f.id === id);
+        if (!fav) throw new Error('Preferito non trovato');
+        const entries = [];
+        for (const item of fav.items) {
+          entries.push(await window.api.meals.add({
+            date,
+            slot,
+            foodId: item.foodId,
+            qty: item.qty,
+            unit: item.unit,
+            source: 'favorite',
+          }));
+        }
+        return { entries };
+      },
+    },
+    ai: {
+      estimateText: async () => {
+        throw Object.assign(new Error('AI non disponibile'), { status: 503 });
+      },
+      estimateImage: async () => {
+        throw Object.assign(new Error('Foto AI non disponibile'), { status: 503 });
+      },
+    },
     stats: {
-      summary: (days = 7) => req('GET', `/stats/summary?days=${days}`),
+      summary: async (days = 7) => ({ days, local: true }),
     },
   };
 
-  // Helper: trasforma un array di entries flat in struttura history[date][slot] = [entry]
-  // come il frontend si aspetta.
   window.groupEntriesByDate = function (entries) {
     const h = {};
     for (const e of entries) {
@@ -166,6 +412,7 @@
         qty: e.qty,
         unit: e.unit,
         grams: e.grams,
+        source: e.source,
       });
     }
     return h;

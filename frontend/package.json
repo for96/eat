@@ -9,6 +9,9 @@
     "dev": "node build.mjs --serve",
     "preview": "node build.mjs --prod && npx --yes serve dist -p 5173"
   },
+  "dependencies": {
+    "@zxing/browser": "^0.1.5"
+  },
   "devDependencies": {
     "esbuild": "^0.24.0",
     "sharp": "^0.33.5"

@@ -1,6 +1,5 @@
 // app.jsx — main App: navigation, state, tweaks panel
-// Stato persistito sul backend via window.api (vedi api.js).
-// Niente più localStorage: ricaricare la pagina rilegge tutto dal server.
+// Stato local-first via window.api (vedi api.js).
 
 const { useState: useStateApp, useEffect: useEffectApp, useMemo: useMemoApp } = React;
 
@@ -13,60 +12,25 @@ function App() {
     document.body.dataset.type = tw.typography;
   }, [tw]);
 
-  // ── stato caricato dal backend ──
+  // ── stato local-first ──
   const [history, setHistory] = useStateApp({});
   const [goals, setGoalsState] = useStateApp({ ...window.DEFAULT_GOALS });
+  const [scans, setScans] = useStateApp([]);
   const [ready, setReady] = useStateApp(false);
-  const [loadError, setLoadError] = useStateApp(null);
 
-  // Carica catalogo foods, preferiti, obiettivi, e ultimi 35 giorni al boot.
+  // Carica catalogo foods, preferiti, obiettivi e storico dal dispositivo.
   useEffectApp(() => {
     (async () => {
-      try {
-        const today = new Date();
-        const past = new Date(today); past.setDate(past.getDate() - 35);
-        const toKey = window.dateKey(today);
-        const fromKey = window.dateKey(past);
-
-        const [foods, favorites, goalsApi, range, todayWater] = await Promise.all([
-          window.api.foods.search('', 50),
-          window.api.favorites.list(),
-          window.api.goals.get(),
-          window.api.meals.range(fromKey, toKey),
-          window.api.water.get(toKey),
-        ]);
-
-        window.FOODS = foods;
-        window.FAVORITES = (favorites || []).map(f => ({
-          id: f.id,
-          name: f.name,
-          items: (f.items || []).map(it => {
-            const triple = [it.foodId, it.qty];
-            if (it.unit) triple.push(it.unit);
-            return triple;
-          }),
-        }));
-
-        setGoalsState({
-          kcal: goalsApi.kcal,
-          p: goalsApi.protein_g,
-          c: goalsApi.carbs_g,
-          fat: goalsApi.fat_g,
-          fb: goalsApi.fiber_g,
-          water_ml: goalsApi.water_ml,
-        });
-
-        const grouped = window.groupEntriesByDate(range.entries || []);
-        if (!grouped[toKey]) {
-          grouped[toKey] = { colazione: [], pranzo: [], cena: [], spuntini: [], water_ml: 0 };
-        }
-        grouped[toKey].water_ml = todayWater.ml || 0;
-        setHistory(grouped);
-        setReady(true);
-      } catch (e) {
-        console.error('Errore caricamento backend:', e);
-        setLoadError(e.message || String(e));
+      const boot = await window.api.boot();
+      const todayKey = window.dateKey(new Date());
+      const nextHistory = { ...(boot.history || {}) };
+      if (!nextHistory[todayKey]) {
+        nextHistory[todayKey] = { colazione: [], pranzo: [], cena: [], spuntini: [], water_ml: 0 };
       }
+      setHistory(nextHistory);
+      setGoalsState({ ...(boot.goals || window.DEFAULT_GOALS) });
+      setScans(boot.scans || []);
+      setReady(true);
     })();
   }, []);
 
@@ -102,6 +66,10 @@ function App() {
 
   // ── mutations: optimistic UI + chiamata backend, rollback su errore ──
   const todayKey = window.dateKey(new Date());
+
+  const refreshScans = () => {
+    setScans(window.api.local.scans());
+  };
 
   const handleAddEntry = async (slot, entry) => {
     // entry locale ha id temporaneo "e_..." — il backend ne assegnerà uno definitivo.
@@ -175,17 +143,6 @@ function App() {
     }
   };
 
-  if (loadError) {
-    return (
-      <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink)', fontFamily: 'system-ui' }}>
-        <h2>Backend non raggiungibile</h2>
-        <p style={{ color: 'var(--ink-soft)' }}>{loadError}</p>
-        <p style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
-          Verifica che il server giri su <code>{(window.PASTO_API_BASE || 'http://localhost:3000')}</code> e ricarica.
-        </p>
-      </div>
-    );
-  }
   if (!ready) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-soft)', fontFamily: 'system-ui' }}>Caricamento…</div>;
   }
@@ -208,9 +165,37 @@ function App() {
               onWaterDelta={handleWaterDelta}
             />
           )}
-          {tab === 'calendar' && <CalendarScreen history={history} goals={goals} />}
+          {tab === 'scanner' && (
+            <ScannerScreen
+              onFoodReady={(food) => {
+                if (food && !window.FOODS.find(f => f.id === food.id)) {
+                  window.FOODS = [...window.FOODS, food];
+                }
+                refreshScans();
+              }}
+              onAddProduct={(slot, food) => {
+                const qty = food.serving || 100;
+                const grams = window.servingToGrams(food, qty);
+                handleAddEntry(slot, {
+                  id: 'e_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                  foodId: food.id,
+                  qty,
+                  unit: food.unit,
+                  grams,
+                  source: 'barcode',
+                });
+              }}
+            />
+          )}
           {tab === 'stats' && <StatsScreen history={history} goals={goals} />}
-          {tab === 'profile' && <ProfileScreen goals={goals} onGoalsChange={setGoals} />}
+          {tab === 'profile' && (
+            <ProfileScreen
+              goals={goals}
+              onGoalsChange={setGoals}
+              history={history}
+              scans={scans}
+            />
+          )}
         </div>
 
         <BottomNav tab={tab} onChange={setTab} onAdd={() => openAdd()} />
@@ -248,8 +233,7 @@ function App() {
           onChange={v => setTweak('density', v)} />
 
         <TweakSection label="Dati" />
-        <TweakButton label="Ricarica dal server" secondary onClick={() => {
-          // I dati ora vivono sul backend. Un reload li rilegge da lì.
+        <TweakButton label="Ricarica app" secondary onClick={() => {
           location.reload();
         }} />
       </TweaksPanel>
@@ -301,7 +285,7 @@ function BottomNav({ tab, onChange, onAdd }) {
   return (
     <nav className="bnav">
       <NavBtn icon="home"     label="Oggi"        on={tab === 'today'}    onClick={() => onChange('today')} />
-      <NavBtn icon="calendar" label="Storico"     on={tab === 'calendar'} onClick={() => onChange('calendar')} />
+      <NavBtn icon="barcode"  label="Scanner"     on={tab === 'scanner'}  onClick={() => onChange('scanner')} />
       <button className="fab" onClick={onAdd} aria-label="Aggiungi pasto">
         <Icon name="plus" size={24} stroke={2} />
       </button>

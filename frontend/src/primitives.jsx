@@ -227,8 +227,10 @@ function Tabs({ value, onChange, options }) {
     <div className="tabs">
       {options.map(o => (
         <button key={o.value}
-                className={`tab ${value === o.value ? 'on' : ''}`}
-                onClick={() => onChange(o.value)}>
+                className={`tab ${value === o.value ? 'on' : ''} ${o.disabled ? 'disabled' : ''}`}
+                disabled={!!o.disabled}
+                title={o.disabled ? 'Non disponibile' : undefined}
+                onClick={() => !o.disabled && onChange(o.value)}>
           {o.icon && <Icon name={o.icon} size={15} stroke={1.7} />}
           <span>{o.label}</span>
         </button>
@@ -243,6 +245,8 @@ function Tabs({ value, onChange, options }) {
         }
         .tab.on { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(31,27,22,.06); }
         .tab:not(.on):hover { color: var(--ink-2); }
+        .tab.disabled { opacity: 0.42; cursor: not-allowed; }
+        .tab.disabled:hover { color: var(--ink-soft); }
         .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `}</style>
     </div>
