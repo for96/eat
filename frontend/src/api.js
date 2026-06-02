@@ -2,7 +2,9 @@
 // per Open Food Facts e future API key.
 
 (function () {
-  const STORAGE_KEY = 'pasto.local.v2';
+  const CURRENT_VERSION = 3;
+  const STORAGE_KEY = 'pasto.local.v3';
+  const LEGACY_STORAGE_KEYS = ['pasto.local.v2'];
   const MAX_SCANS = 60;
   const isLocalDev =
     typeof location !== 'undefined' &&
@@ -12,6 +14,35 @@
   const BASE = (explicit ?? (isLocalDev ? 'http://localhost:3000' : '')) + '/api/v1';
 
   const seed = window.PASTO_SEED || { foods: [], favorites: [], default_goals: window.DEFAULT_GOALS };
+
+  function normalizeProfile(profile = {}) {
+    profile = profile && typeof profile === 'object' ? profile : {};
+    const base = window.DEFAULT_PROFILE || {};
+    return {
+      ...base,
+      ...profile,
+      firstName: cleanString(profile.firstName ?? base.firstName),
+      lastName: cleanString(profile.lastName ?? base.lastName),
+      weightKg: clampNumber(profile.weightKg ?? base.weightKg, 30, 250, base.weightKg),
+      heightCm: clampNumber(profile.heightCm ?? base.heightCm, 120, 230, base.heightCm),
+      targetWeightKg: clampNumber(profile.targetWeightKg ?? base.targetWeightKg, 30, 250, base.targetWeightKg),
+      weightGoal: ['lose', 'maintain', 'gain'].includes(profile.weightGoal) ? profile.weightGoal : base.weightGoal,
+      activityLevel: ['sedentary', 'light', 'moderate', 'high'].includes(profile.activityLevel) ? profile.activityLevel : base.activityLevel,
+      activityMinutesWeek: clampNumber(profile.activityMinutesWeek ?? base.activityMinutesWeek, 0, 2000, base.activityMinutesWeek),
+      avatarDataUrl: typeof profile.avatarDataUrl === 'string' ? profile.avatarDataUrl : null,
+      updatedAt: profile.updatedAt || null,
+    };
+  }
+
+  function cleanString(value) {
+    return typeof value === 'string' ? value.trim().slice(0, 80) : '';
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
 
   function normalizeFood(f) {
     return {
@@ -56,7 +87,8 @@
 
   function initialState() {
     return {
-      version: 2,
+      version: CURRENT_VERSION,
+      profile: normalizeProfile(window.DEFAULT_PROFILE),
       goals: { ...(seed.default_goals || window.DEFAULT_GOALS) },
       foods: (seed.foods || []).map(normalizeFood),
       favorites: (seed.favorites || []).map(normalizeFavorite),
@@ -67,12 +99,16 @@
 
   function readState() {
     let stored = null;
+    const keys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
     try {
-      stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+      for (const key of keys) {
+        stored = JSON.parse(localStorage.getItem(key) || 'null');
+        if (stored) break;
+      }
     } catch {}
 
     const base = initialState();
-    if (!stored || stored.version !== 2) return base;
+    if (!stored || (stored.version !== 2 && stored.version !== CURRENT_VERSION)) return base;
 
     const foodMap = new Map(base.foods.map((f) => [f.id, f]));
     for (const food of stored.foods || []) {
@@ -81,8 +117,10 @@
     return {
       ...base,
       ...stored,
-      foods: [...foodMap.values()],
+      version: CURRENT_VERSION,
+      profile: normalizeProfile(stored.profile || base.profile),
       favorites: (stored.favorites || base.favorites).map(normalizeFavorite),
+      foods: [...foodMap.values()],
       history: stored.history || {},
       scans: stored.scans || [],
     };
@@ -109,6 +147,17 @@
         return row;
       }),
     }));
+  }
+
+  function snapshot() {
+    return {
+      foods: state.foods.map(normalizeFood),
+      favorites: state.favorites.map(normalizeFavorite),
+      goals: { ...state.goals },
+      profile: normalizeProfile(state.profile),
+      history: { ...state.history },
+      scans: [...state.scans],
+    };
   }
 
   function ensureDay(date) {
@@ -214,20 +263,35 @@
     normalizeFood,
     boot: async () => {
       syncGlobals();
-      return {
-        foods: state.foods,
-        favorites: state.favorites,
-        goals: state.goals,
-        history: state.history,
-        scans: state.scans,
-      };
+      return snapshot();
+    },
+    bootSnapshot: () => {
+      syncGlobals();
+      return snapshot();
     },
     local: {
       state: () => state,
       reset: resetLocalData,
       scans: () => state.scans,
+      profile: () => normalizeProfile(state.profile),
     },
-    me: async () => ({ user: { id: 'local-user', name: 'Marco' } }),
+    profile: {
+      get: async () => normalizeProfile(state.profile),
+      put: async (patch) => {
+        state.profile = normalizeProfile({
+          ...state.profile,
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        });
+        save();
+        return normalizeProfile(state.profile);
+      },
+    },
+    me: async () => {
+      const profile = normalizeProfile(state.profile);
+      const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'Profilo locale';
+      return { user: { id: 'local-user', name, profile } };
+    },
     goals: {
       get: async () => ({
         kcal: state.goals.kcal,

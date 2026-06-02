@@ -17,6 +17,19 @@ window.DEFAULT_GOALS = {
   water_ml: 2500,
 };
 
+window.DEFAULT_PROFILE = {
+  firstName: 'Marco',
+  lastName: '',
+  weightKg: 78,
+  heightCm: 178,
+  targetWeightKg: 76,
+  weightGoal: 'maintain',
+  activityLevel: 'moderate',
+  activityMinutesWeek: 180,
+  avatarDataUrl: null,
+  updatedAt: null,
+};
+
 // ─── Calcoli ──────────────────────────────────────────────────────────────
 // Quick computation: given foodId + grams, return macros for that portion.
 // Resta lato client per il rendering live (anelli, barre): il backend ne

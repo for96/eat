@@ -2,7 +2,7 @@
 //
 // Strategia (stessa di Symplex):
 // 1. Concatena tutti i file src/ nell'ordine corretto (vedi SRC_ORDER).
-// 2. Bundle JSX via esbuild → bundle.js (React resta esterno, ZXing viene incluso).
+// 2. Bundle JSX via esbuild → bundle.js (React resta esterno, ZXing lazy-load).
 // 3. Copia index.html → dist/ + asset statici (manifest, sw.js, icone).
 // 4. Genera icone PNG da SVG (con sharp) se mancano.
 //
@@ -47,8 +47,6 @@ async function concatSources() {
     }),
   );
   return [
-    'import * as ZXingBrowser from "@zxing/browser";',
-    "window.ZXingBrowser = ZXingBrowser;",
     ...parts,
   ].join("\n\n");
 }
@@ -124,6 +122,17 @@ async function copyPublicFiles() {
   }
 }
 
+async function copyVendorFiles() {
+  const vendorDir = path.join(DIST, "vendor");
+  await mkdir(vendorDir, { recursive: true });
+  const zxingSrc = path.join(ROOT, "node_modules", "@zxing", "browser", "umd", "zxing-browser.min.js");
+  if (existsSync(zxingSrc)) {
+    await copyFile(zxingSrc, path.join(vendorDir, "zxing-browser.min.js"));
+  } else {
+    console.warn("  ! @zxing/browser non installato: lo scanner camera usera' solo l'inserimento manuale.");
+  }
+}
+
 async function copyIndexHtml(bundleHash) {
   let html = await readFile(path.join(ROOT, "index.html"), "utf-8");
   // Cache-bust: aggiungi un hash al nome del bundle in prod.
@@ -152,6 +161,7 @@ async function build() {
   if (result.map) await writeFile(path.join(DIST, `${bundleName}.map`), result.map);
 
   await copyPublicFiles();
+  await copyVendorFiles();
   await copyIndexHtml(hash);
 
   console.log(`✓ dist/${bundleName}  (${(result.code.length / 1024).toFixed(1)} KB)`);

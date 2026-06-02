@@ -694,7 +694,7 @@ function ScannerScreen({ onFoodReady, onAddProduct }) {
   const startCamera = async () => {
     setMessage('');
     setStatus('camera');
-    const Reader = getZXingReader();
+    const Reader = await loadZXingReader();
     if (!Reader || !navigator.mediaDevices?.getUserMedia) {
       setStatus('error');
       setMessage('Scanner camera non disponibile qui. Puoi inserire il codice manualmente.');
@@ -849,9 +849,26 @@ function ScannerScreen({ onFoodReady, onAddProduct }) {
   );
 }
 
+let zxingLoadPromise = null;
 function getZXingReader() {
   const zxing = window.ZXingBrowser || window.ZXing;
   return zxing && zxing.BrowserMultiFormatReader;
+}
+
+function loadZXingReader() {
+  const current = getZXingReader();
+  if (current) return Promise.resolve(current);
+  if (!zxingLoadPromise) {
+    zxingLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/vendor/zxing-browser.min.js';
+      script.async = true;
+      script.onload = () => resolve(getZXingReader());
+      script.onerror = () => reject(new Error('ZXing non disponibile'));
+      document.head.appendChild(script);
+    });
+  }
+  return zxingLoadPromise.catch(() => null);
 }
 
 function ProductSummary({ food }) {
@@ -956,41 +973,53 @@ function QualityList({ title, items, tone, empty }) {
 // ════════════════════════════════════════════════════════════════════════
 // PROFILE / SETTINGS
 // ════════════════════════════════════════════════════════════════════════
-function ProfileScreen({ goals, onGoalsChange, history = {}, scans = [] }) {
+function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE, onProfileChange, history = {}, scans = [] }) {
   const setG = (key, v) => onGoalsChange({ ...goals, [key]: v });
-  const [section, setSection] = useStateSc('goals');
+  const [section, setSection] = useStateSc('profile');
+  const safeProfile = { ...(window.DEFAULT_PROFILE || {}), ...(profile || {}) };
 
   // macro split %
-  const splitTotal = goals.p * 4 + goals.c * 4 + goals.fat * 9;
+  const splitTotal = Math.max(1, goals.p * 4 + goals.c * 4 + goals.fat * 9);
   const pPct = Math.round((goals.p * 4 / splitTotal) * 100);
   const cPct = Math.round((goals.c * 4 / splitTotal) * 100);
   const fPct = Math.round((goals.fat * 9 / splitTotal) * 100);
+  const title = {
+    profile: 'Dati personali',
+    goals: 'Obiettivi giornalieri',
+    history: 'Storico',
+    scans: 'Scansioni',
+  }[section];
 
   return (
     <div className="prof">
       <header className="prof-head">
         <div>
           <div className="eyebrow">Profilo</div>
-          <h1 className="prof-title display">
-            {section === 'goals' ? 'Obiettivi giornalieri' : section === 'history' ? 'Storico' : 'Scansioni'}
-          </h1>
+          <h1 className="prof-title display">{title}</h1>
         </div>
       </header>
 
-      <div className="profile-summary">
-        <div className="prof-avatar">M</div>
+      <button className="profile-summary" onClick={() => setSection('profile')} aria-label="Modifica profilo">
+        <ProfileAvatar profile={safeProfile} size={44} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 500 }}>Marco</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>Mantenimento · Attività moderata</div>
+          <div style={{ fontSize: 16, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {profileDisplayName(safeProfile)}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{profileSummaryLine(safeProfile)}</div>
         </div>
         <Icon name="edit" size={16} style={{ color: 'var(--ink-faint)' }} />
-      </div>
+      </button>
 
       <div className="profile-tabs">
+        <button className={section === 'profile' ? 'on' : ''} onClick={() => setSection('profile')}>Dati</button>
         <button className={section === 'goals' ? 'on' : ''} onClick={() => setSection('goals')}>Obiettivi</button>
         <button className={section === 'history' ? 'on' : ''} onClick={() => setSection('history')}>Storico</button>
         <button className={section === 'scans' ? 'on' : ''} onClick={() => setSection('scans')}>Scansioni</button>
       </div>
+
+      {section === 'profile' && (
+        <ProfileDetailsForm profile={safeProfile} onProfileChange={onProfileChange} />
+      )}
 
       {section === 'goals' && (
         <>
@@ -1043,14 +1072,17 @@ function ProfileScreen({ goals, onGoalsChange, history = {}, scans = [] }) {
         .prof-title { font-size: 24px; font-weight: 400; font-style: italic; margin: 4px 0 0;
           text-transform: lowercase; letter-spacing: -0.01em; }
         body[data-type="moderno"] .prof-title { font-style: normal; font-weight: 600; text-transform: none; }
-        .profile-summary { display: flex; align-items: center; gap: 14px;
+        .profile-summary { appearance: none; width: 100%; color: inherit; font: inherit; text-align: left;
+          display: flex; align-items: center; gap: 14px; cursor: pointer;
           background: var(--surface); border: 1px solid var(--line);
           border-radius: var(--radius); padding: 14px; }
-        .prof-avatar { width: 44px; height: 44px; border-radius: 22px;
+        .profile-summary:hover { border-color: var(--ink-faint); }
+        .prof-avatar { border-radius: 999px; overflow: hidden;
           background: var(--accent); color: #fff;
           display: grid; place-items: center;
-          font-family: var(--font-display); font-size: 22px; font-style: italic; }
-        .profile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+          font-family: var(--font-display); font-size: 22px; font-style: italic; flex-shrink: 0; }
+        .prof-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .profile-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
           background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
           padding: 4px; margin-top: 12px; }
         .profile-tabs button { appearance: none; border: 0; background: transparent; color: var(--ink-soft);
@@ -1060,6 +1092,282 @@ function ProfileScreen({ goals, onGoalsChange, history = {}, scans = [] }) {
       `}</style>
     </div>
   );
+}
+
+function ProfileDetailsForm({ profile, onProfileChange }) {
+  const [draft, setDraft] = useStateSc(profile);
+  const [busy, setBusy] = useStateSc(false);
+  const [status, setStatus] = useStateSc(null);
+  const fileRef = useRefSc(null);
+
+  useEffectSc(() => {
+    setDraft(profile);
+  }, [profile.updatedAt]);
+
+  const update = (key, value) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const save = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setStatus(null);
+    try {
+      const saved = await onProfileChange(cleanProfileDraft(draft));
+      if (saved) setDraft(saved);
+      setStatus({ tone: 'good', text: 'Profilo salvato' });
+    } catch (e) {
+      console.error(e);
+      setStatus({ tone: 'bad', text: 'Salvataggio non riuscito' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseAvatar = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      setStatus({ tone: 'bad', text: 'Formato immagine non valido' });
+      return;
+    }
+    if (file.size > PROFILE_IMAGE_SOURCE_MAX_BYTES) {
+      setStatus({ tone: 'bad', text: 'Immagine troppo grande' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const avatar = await compressProfileImage(file);
+      update('avatarDataUrl', avatar.dataUrl);
+      setStatus({ tone: 'good', text: `Foto compressa a ${Math.round(avatar.bytes / 1024)} KB` });
+    } catch (e) {
+      console.error(e);
+      setStatus({ tone: 'bad', text: 'Compressione immagine non riuscita' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="profile-form" onSubmit={save}>
+      <div className="profile-photo-card card">
+        <ProfileAvatar profile={draft} size={68} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="eyebrow">Foto profilo</div>
+          <div className="profile-photo-meta">256 x 256 px · max 220 KB</div>
+        </div>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={chooseAvatar} />
+        <button type="button" className="iconbtn iconbtn-outline" onClick={() => fileRef.current?.click()} aria-label="Carica foto profilo">
+          <Icon name="camera" size={16} />
+        </button>
+        {draft.avatarDataUrl && (
+          <button type="button" className="iconbtn iconbtn-ghost" onClick={() => update('avatarDataUrl', null)} aria-label="Rimuovi foto profilo">
+            <Icon name="close" size={14} />
+          </button>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="profile-form-grid">
+          <ProfileField label="Nome" value={draft.firstName || ''} onChange={(v) => update('firstName', v)} />
+          <ProfileField label="Cognome" value={draft.lastName || ''} onChange={(v) => update('lastName', v)} />
+          <ProfileField label="Peso" type="number" unit="kg" value={draft.weightKg} min={30} max={250} step={0.1} onChange={(v) => update('weightKg', v)} />
+          <ProfileField label="Altezza" type="number" unit="cm" value={draft.heightCm} min={120} max={230} step={1} onChange={(v) => update('heightCm', v)} />
+          <ProfileField label="Obiettivo peso" type="number" unit="kg" value={draft.targetWeightKg} min={30} max={250} step={0.1} onChange={(v) => update('targetWeightKg', v)} />
+          <ProfileField label="Attivita" type="number" unit="min/sett" value={draft.activityMinutesWeek} min={0} max={2000} step={15} onChange={(v) => update('activityMinutesWeek', v)} />
+        </div>
+        <div className="profile-form-grid two" style={{ marginTop: 10 }}>
+          <ProfileSelect
+            label="Obiettivo"
+            value={draft.weightGoal}
+            onChange={(v) => update('weightGoal', v)}
+            options={[
+              ['lose', 'Dimagrimento'],
+              ['maintain', 'Mantenimento'],
+              ['gain', 'Aumento peso'],
+            ]}
+          />
+          <ProfileSelect
+            label="Livello attivita"
+            value={draft.activityLevel}
+            onChange={(v) => update('activityLevel', v)}
+            options={[
+              ['sedentary', 'Sedentaria'],
+              ['light', 'Leggera'],
+              ['moderate', 'Moderata'],
+              ['high', 'Intensa'],
+            ]}
+          />
+        </div>
+      </div>
+
+      {status && <div className={`profile-status ${status.tone}`}>{status.text}</div>}
+
+      <button className="btn btn-primary" style={{ width: '100%', height: 46, marginTop: 12 }} disabled={busy} type="submit">
+        <Icon name="check" size={17} />
+        {busy ? 'Salvataggio...' : 'Salva profilo'}
+      </button>
+
+      <style>{`
+        .profile-form { margin-top: 14px; }
+        .profile-photo-card { display: flex; align-items: center; gap: 12px; }
+        .profile-photo-meta { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+        .profile-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .profile-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        .profile-field span { font-size: 11px; color: var(--ink-soft); font-weight: 500; }
+        .profile-input-wrap { display: flex; align-items: center; gap: 6px;
+          height: 40px; border: 1px solid var(--line); border-radius: 12px;
+          background: var(--bg); padding: 0 10px; }
+        .profile-input-wrap:focus-within { border-color: var(--ink-2); }
+        .profile-field input, .profile-field select {
+          width: 100%; min-width: 0; border: 0; outline: 0; background: transparent;
+          color: var(--ink); font: inherit; font-size: 13.5px;
+        }
+        .profile-field select { appearance: none; cursor: pointer; }
+        .profile-unit { color: var(--ink-soft); font-size: 11px; white-space: nowrap; }
+        .profile-status { text-align: center; font-size: 12px; margin-top: 10px; color: var(--ink-soft); }
+        .profile-status.good { color: var(--fat); }
+        .profile-status.bad { color: var(--accent); }
+      `}</style>
+    </form>
+  );
+}
+
+function ProfileField({ label, value, onChange, type = 'text', unit, min, max, step }) {
+  return (
+    <label className="profile-field">
+      <span>{label}</span>
+      <div className="profile-input-wrap">
+        <input
+          type={type}
+          value={value ?? ''}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => onChange(type === 'number' ? (e.target.value === '' ? '' : e.target.valueAsNumber) : e.target.value)}
+        />
+        {unit && <em className="profile-unit">{unit}</em>}
+      </div>
+    </label>
+  );
+}
+
+function ProfileSelect({ label, value, onChange, options }) {
+  return (
+    <label className="profile-field">
+      <span>{label}</span>
+      <div className="profile-input-wrap">
+        <select value={value} onChange={(e) => onChange(e.target.value)}>
+          {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <Icon name="chevron-down" size={14} style={{ color: 'var(--ink-faint)' }} />
+      </div>
+    </label>
+  );
+}
+
+function ProfileAvatar({ profile, size }) {
+  const style = { width: size, height: size };
+  return (
+    <div className="prof-avatar" style={style}>
+      {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" /> : profileInitials(profile)}
+    </div>
+  );
+}
+
+const PROFILE_IMAGE_PX = 256;
+const PROFILE_IMAGE_MAX_BYTES = 220 * 1024;
+const PROFILE_IMAGE_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
+
+function cleanProfileDraft(draft) {
+  return {
+    ...draft,
+    firstName: String(draft.firstName || '').trim().slice(0, 80),
+    lastName: String(draft.lastName || '').trim().slice(0, 80),
+    weightKg: toProfileNumber(draft.weightKg, 30, 250, window.DEFAULT_PROFILE.weightKg),
+    heightCm: toProfileNumber(draft.heightCm, 120, 230, window.DEFAULT_PROFILE.heightCm),
+    targetWeightKg: toProfileNumber(draft.targetWeightKg, 30, 250, window.DEFAULT_PROFILE.targetWeightKg),
+    activityMinutesWeek: Math.round(toProfileNumber(draft.activityMinutesWeek, 0, 2000, window.DEFAULT_PROFILE.activityMinutesWeek)),
+  };
+}
+
+function profileDisplayName(profile) {
+  return [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'Profilo locale';
+}
+
+function profileInitials(profile) {
+  const parts = [profile.firstName, profile.lastName].filter(Boolean);
+  const initials = parts.map((p) => p.trim()[0]).join('').slice(0, 2);
+  return initials || 'P';
+}
+
+function profileSummaryLine(profile) {
+  return `${weightGoalLabel(profile.weightGoal)} · ${activityLabel(profile.activityLevel)} · ${Math.round(profile.activityMinutesWeek || 0)} min/sett`;
+}
+
+function weightGoalLabel(value) {
+  return { lose: 'Dimagrimento', maintain: 'Mantenimento', gain: 'Aumento peso' }[value] || 'Mantenimento';
+}
+
+function activityLabel(value) {
+  return { sedentary: 'Attivita sedentaria', light: 'Attivita leggera', moderate: 'Attivita moderata', high: 'Attivita intensa' }[value] || 'Attivita moderata';
+}
+
+function toProfileNumber(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+async function compressProfileImage(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = PROFILE_IMAGE_PX;
+  canvas.height = PROFILE_IMAGE_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas non disponibile');
+  ctx.fillStyle = '#F2ECDF';
+  ctx.fillRect(0, 0, PROFILE_IMAGE_PX, PROFILE_IMAGE_PX);
+  const scale = Math.max(PROFILE_IMAGE_PX / img.width, PROFILE_IMAGE_PX / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  const x = (PROFILE_IMAGE_PX - w) / 2;
+  const y = (PROFILE_IMAGE_PX - h) / 2;
+  ctx.drawImage(img, x, y, w, h);
+
+  let quality = 0.78;
+  let out = canvas.toDataURL('image/jpeg', quality);
+  while (dataUrlBytes(out) > PROFILE_IMAGE_MAX_BYTES && quality > 0.42) {
+    quality -= 0.08;
+    out = canvas.toDataURL('image/jpeg', quality);
+  }
+  const bytes = dataUrlBytes(out);
+  if (bytes > PROFILE_IMAGE_MAX_BYTES) throw new Error('Avatar oltre il limite localStorage');
+  return { dataUrl: out, bytes };
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function dataUrlBytes(dataUrl) {
+  return new Blob([dataUrl]).size;
 }
 
 function ScansProfileView({ scans }) {

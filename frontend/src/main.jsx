@@ -3,6 +3,20 @@
 
 const { useState: useStateApp, useEffect: useEffectApp, useMemo: useMemoApp } = React;
 
+function bootStateWithToday(boot) {
+  const todayKey = window.dateKey(new Date());
+  const history = { ...((boot && boot.history) || {}) };
+  if (!history[todayKey]) {
+    history[todayKey] = { colazione: [], pranzo: [], cena: [], spuntini: [], water_ml: 0 };
+  }
+  return {
+    history,
+    goals: { ...((boot && boot.goals) || window.DEFAULT_GOALS) },
+    profile: { ...((boot && boot.profile) || window.DEFAULT_PROFILE) },
+    scans: (boot && boot.scans) || [],
+  };
+}
+
 function App() {
   // ── tweaks ──
   const [tw, setTweak] = useTweaks(window.PASTO_DEFAULTS);
@@ -13,24 +27,21 @@ function App() {
   }, [tw]);
 
   // ── stato local-first ──
-  const [history, setHistory] = useStateApp({});
-  const [goals, setGoalsState] = useStateApp({ ...window.DEFAULT_GOALS });
-  const [scans, setScans] = useStateApp([]);
-  const [ready, setReady] = useStateApp(false);
+  const initialBoot = useMemoApp(() => bootStateWithToday(window.api.bootSnapshot()), []);
+  const [history, setHistory] = useStateApp(initialBoot.history);
+  const [goals, setGoalsState] = useStateApp(initialBoot.goals);
+  const [profile, setProfileState] = useStateApp(initialBoot.profile);
+  const [scans, setScans] = useStateApp(initialBoot.scans);
 
   // Carica catalogo foods, preferiti, obiettivi e storico dal dispositivo.
   useEffectApp(() => {
     (async () => {
       const boot = await window.api.boot();
-      const todayKey = window.dateKey(new Date());
-      const nextHistory = { ...(boot.history || {}) };
-      if (!nextHistory[todayKey]) {
-        nextHistory[todayKey] = { colazione: [], pranzo: [], cena: [], spuntini: [], water_ml: 0 };
-      }
-      setHistory(nextHistory);
-      setGoalsState({ ...(boot.goals || window.DEFAULT_GOALS) });
-      setScans(boot.scans || []);
-      setReady(true);
+      const next = bootStateWithToday(boot);
+      setHistory(next.history);
+      setGoalsState(next.goals);
+      setProfileState(next.profile);
+      setScans(next.scans);
     })();
   }, []);
 
@@ -46,6 +57,19 @@ function App() {
       fiber_g: obj.fb,
       water_ml: obj.water_ml,
     }).catch(err => console.error('PUT /goals fallito:', err));
+  };
+
+  const setProfile = async (next) => {
+    const obj = typeof next === 'function' ? next(profile) : next;
+    setProfileState(obj);
+    try {
+      const saved = await window.api.profile.put(obj);
+      setProfileState(saved);
+      return saved;
+    } catch (err) {
+      console.error('PUT /profile locale fallito:', err);
+      return obj;
+    }
   };
 
   // ── navigation ──
@@ -143,10 +167,6 @@ function App() {
     }
   };
 
-  if (!ready) {
-    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-soft)', fontFamily: 'system-ui' }}>Caricamento…</div>;
-  }
-
   return (
     <div className="ambient">
       <div className="stage">
@@ -192,6 +212,8 @@ function App() {
             <ProfileScreen
               goals={goals}
               onGoalsChange={setGoals}
+              profile={profile}
+              onProfileChange={setProfile}
               history={history}
               scans={scans}
             />
@@ -297,10 +319,11 @@ function BottomNav({ tab, onChange, onAdd }) {
           flex-shrink: 0;
           display: grid; grid-template-columns: 1fr 1fr 64px 1fr 1fr;
           align-items: center;
-          padding: 10px 16px 16px;
+          padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
           background: linear-gradient(180deg, transparent, var(--bg) 30%);
           gap: 4px;
           position: relative;
+          z-index: 20;
         }
         .bnav::before {
           content: ""; position: absolute; left: 16px; right: 16px; top: 0;

@@ -8,7 +8,7 @@
 //
 // Versionamento: cambia CACHE_VERSION quando vuoi forzare l'invalidazione.
 
-const CACHE_VERSION = "pasto-v2-local-first";
+const CACHE_VERSION = "pasto-v3-profile-fastboot";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const FONTS_CACHE = `${CACHE_VERSION}-fonts`;
 
