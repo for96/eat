@@ -3,7 +3,7 @@ import { z } from "zod";
 const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default("127.0.0.1"),
-  CORS_ORIGIN: z.string().default("*"),
+  CORS_ORIGIN: z.string().default("http://localhost:5173,http://127.0.0.1:5173"),
   OFF_USER_AGENT: z.string().default("Pasto/0.1 (contact@example.com)"),
 });
 

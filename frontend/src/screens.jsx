@@ -975,7 +975,7 @@ function QualityList({ title, items, tone, empty }) {
 // ════════════════════════════════════════════════════════════════════════
 function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE, onProfileChange, history = {}, scans = [] }) {
   const setG = (key, v) => onGoalsChange({ ...goals, [key]: v });
-  const [section, setSection] = useStateSc('profile');
+  const [section, setSection] = useStateSc('goals');
   const safeProfile = { ...(window.DEFAULT_PROFILE || {}), ...(profile || {}) };
 
   // macro split %

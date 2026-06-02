@@ -10,7 +10,9 @@
     "preview": "node build.mjs --prod && npx --yes serve dist -p 5173"
   },
   "dependencies": {
-    "@zxing/browser": "^0.1.5"
+    "@zxing/browser": "^0.1.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

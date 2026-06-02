@@ -15,11 +15,11 @@
     "vercel-build": "cd frontend && npm install && npm run build"
   },
   "dependencies": {
-    "@vercel/node": "^3.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@vercel/node": "5.8.9",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -8,9 +8,10 @@
 //
 // Versionamento: cambia CACHE_VERSION quando vuoi forzare l'invalidazione.
 
-const CACHE_VERSION = "pasto-v3-profile-fastboot";
+const CACHE_VERSION = "pasto-v4-local-react";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const FONTS_CACHE = `${CACHE_VERSION}-fonts`;
+const BUILD_ASSETS = [];
 
 const SHELL_ASSETS = [
   "/",
@@ -19,6 +20,7 @@ const SHELL_ASSETS = [
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  ...BUILD_ASSETS,
 ];
 
 self.addEventListener("install", (event) => {

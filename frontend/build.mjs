@@ -2,7 +2,7 @@
 //
 // Strategia (stessa di Symplex):
 // 1. Concatena tutti i file src/ nell'ordine corretto (vedi SRC_ORDER).
-// 2. Bundle JSX via esbuild → bundle.js (React resta esterno, ZXing lazy-load).
+// 2. Bundle JSX via esbuild → bundle.js (React vendorizzato, ZXing lazy-load).
 // 3. Copia index.html → dist/ + asset statici (manifest, sw.js, icone).
 // 4. Genera icone PNG da SVG (con sharp) se mancano.
 //
@@ -11,7 +11,7 @@
 //   --serve  dev server (esbuild) su :5173 con livereload
 
 import esbuild from "esbuild";
-import { readFile, writeFile, mkdir, copyFile, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile, readdir, stat, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -125,6 +125,24 @@ async function copyPublicFiles() {
 async function copyVendorFiles() {
   const vendorDir = path.join(DIST, "vendor");
   await mkdir(vendorDir, { recursive: true });
+  const vendorFiles = [
+    {
+      name: "react.production.min.js",
+      src: path.join(ROOT, "node_modules", "react", "umd", "react.production.min.js"),
+    },
+    {
+      name: "react-dom.production.min.js",
+      src: path.join(ROOT, "node_modules", "react-dom", "umd", "react-dom.production.min.js"),
+    },
+  ];
+  for (const file of vendorFiles) {
+    if (existsSync(file.src)) {
+      await copyFile(file.src, path.join(vendorDir, file.name));
+    } else {
+      console.warn(`  ! ${file.name} non trovato: esegui npm install in frontend/.`);
+    }
+  }
+
   const zxingSrc = path.join(ROOT, "node_modules", "@zxing", "browser", "umd", "zxing-browser.min.js");
   if (existsSync(zxingSrc)) {
     await copyFile(zxingSrc, path.join(vendorDir, "zxing-browser.min.js"));
@@ -133,17 +151,33 @@ async function copyVendorFiles() {
   }
 }
 
-async function copyIndexHtml(bundleHash) {
+async function copyServiceWorker(bundleName) {
+  let sw = await readFile(path.join(PUBLIC, "sw.js"), "utf-8");
+  const buildAssets = [
+    `/${bundleName}`,
+    "/vendor/react.production.min.js",
+    "/vendor/react-dom.production.min.js",
+  ];
+  sw = sw.replace("const BUILD_ASSETS = [];", `const BUILD_ASSETS = ${JSON.stringify(buildAssets, null, 2)};`);
+  await writeFile(path.join(DIST, "sw.js"), sw);
+}
+
+async function copyIndexHtml(bundleName) {
   let html = await readFile(path.join(ROOT, "index.html"), "utf-8");
-  // Cache-bust: aggiungi un hash al nome del bundle in prod.
-  if (PROD && bundleHash) {
-    html = html.replace("/bundle.js", `/bundle.${bundleHash}.js`);
-  }
+  const preloadLinks = [
+    '<link rel="preload" href="/vendor/react.production.min.js" as="script" />',
+    '<link rel="preload" href="/vendor/react-dom.production.min.js" as="script" />',
+    `<link rel="preload" href="/${bundleName}" as="script" />`,
+  ].join("\n");
+  html = html
+    .replace("<!-- PASTO_PRELOADS -->", preloadLinks)
+    .replace("/bundle.js", `/${bundleName}`);
   await writeFile(path.join(DIST, "index.html"), html);
 }
 
 async function build() {
   console.log(PROD ? "🏗  Building (prod)…" : "🛠  Building (dev)…");
+  await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
   await ensureIcons();
 
@@ -162,7 +196,8 @@ async function build() {
 
   await copyPublicFiles();
   await copyVendorFiles();
-  await copyIndexHtml(hash);
+  await copyServiceWorker(bundleName);
+  await copyIndexHtml(bundleName);
 
   console.log(`✓ dist/${bundleName}  (${(result.code.length / 1024).toFixed(1)} KB)`);
 }
@@ -198,7 +233,7 @@ async function serve() {
   watchers.push(
     watch(path.join(ROOT, "index.html"), async () => {
       try {
-        await copyIndexHtml("");
+        await copyIndexHtml("bundle.js");
         console.log("↻ index.html copied");
       } catch {}
     }),

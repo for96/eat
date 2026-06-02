@@ -7,6 +7,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: req.method || "GET",
       url: req.url || "/",
       body: normalizeBody(req.body),
+      headers: req.headers,
     });
 
     res.statusCode = appRes.status;

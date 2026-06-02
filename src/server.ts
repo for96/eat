@@ -11,6 +11,7 @@ const server = createServer(async (req, res) => {
       method: req.method || "GET",
       url: req.url || "/",
       body,
+      headers: req.headers,
     });
 
     res.statusCode = appRes.status;

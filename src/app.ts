@@ -5,6 +5,7 @@ type AppRequest = {
   method: string;
   url: string;
   body?: unknown;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 export type AppResponse = {
@@ -22,7 +23,7 @@ export async function handleAppRequest(req: AppRequest): Promise<AppResponse> {
   const env = loadEnv();
   const method = req.method.toUpperCase();
   const url = new URL(req.url, "http://localhost");
-  const corsHeaders = cors(env.CORS_ORIGIN);
+  const corsHeaders = cors(env.CORS_ORIGIN, header(req.headers, "origin"));
 
   if (method === "OPTIONS") {
     return {
@@ -82,9 +83,25 @@ function json(
   };
 }
 
-function cors(origin: string): Record<string, string> {
+function header(
+  headers: AppRequest["headers"],
+  name: string,
+): string | undefined {
+  const value = headers?.[name] ?? headers?.[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function cors(allowedOrigins: string, requestOrigin?: string): Record<string, string> {
+  const origins = allowedOrigins
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const allowAll = origins.includes("*");
+  const allowed = requestOrigin && (allowAll || origins.includes(requestOrigin));
+
   return {
-    "access-control-allow-origin": origin,
+    ...(allowed && { "access-control-allow-origin": requestOrigin }),
+    ...(allowed && !allowAll && { vary: "Origin" }),
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "content-type,accept",
   };
