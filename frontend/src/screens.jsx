@@ -169,11 +169,28 @@ function MealCard({ slot, icon, entries, onAdd, onRemove, compact = false }) {
             </div>
           </div>
         </div>
-        <button className="iconbtn iconbtn-outline" style={{ width: 34, height: 34 }}
-                onClick={e => { e.stopPropagation(); onAdd(); }}
-                aria-label={`Aggiungi a ${SLOT_LABEL[slot]}`}>
-          <Icon name="plus" size={16} />
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {!empty && (
+            <button className="iconbtn iconbtn-outline" style={{ width: 34, height: 34, color: 'var(--accent)' }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const name = window.prompt("Nome del preferito:", `Il mio ${SLOT_LABEL[slot].toLowerCase()}`);
+                      if (name && name.trim()) {
+                        const items = entries.map(it => ({ foodId: it.foodId, qty: it.qty, unit: it.unit }));
+                        await window.api.favorites.create(name.trim(), items);
+                        alert("Preferito salvato con successo!");
+                      }
+                    }}
+                    aria-label="Salva come preferito">
+              <Icon name="heart" size={15} />
+            </button>
+          )}
+          <button className="iconbtn iconbtn-outline" style={{ width: 34, height: 34 }}
+                  onClick={e => { e.stopPropagation(); onAdd(); }}
+                  aria-label={`Aggiungi a ${SLOT_LABEL[slot]}`}>
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
       </div>
       {!empty && open && (
         <div className="meal-items">

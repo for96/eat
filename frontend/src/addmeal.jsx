@@ -25,6 +25,10 @@ function AddMealSheet({ open, onClose, defaultSlot = 'colazione', onAdd }) {
 
   const confirm = () => {
     if (!selectedFood) return;
+    if (!qty || qty <= 0) {
+      alert("Inserisci una quantità maggiore di zero");
+      return;
+    }
     const grams = window.servingToGrams(selectedFood, qty);
     onAdd(slot, {
       id: 'e_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -127,7 +131,8 @@ function SearchTab({ onPick }) {
     if (!query) return window.FOODS.slice(0, 14);
     return window.FOODS.filter(f =>
       f.name.toLowerCase().includes(query) ||
-      f.cat.toLowerCase().includes(query)
+      f.cat.toLowerCase().includes(query) ||
+      (f.brand || '').toLowerCase().includes(query)
     ).slice(0, 30);
   }, [q]);
 
@@ -653,11 +658,20 @@ function AITab({ onPick }) {
 
 // ─── FavoritesTab ───────────────────────────────────────────────────────
 function FavoritesTab({ onPickFav }) {
+  const [favorites, setFavorites] = useStateAM(() => window.FAVORITES);
+
+  const handleRemove = async (id, name) => {
+    if (window.confirm(`Vuoi davvero eliminare il preferito "${name}"?`)) {
+      await window.api.favorites.remove(id);
+      setFavorites([...window.FAVORITES]);
+    }
+  };
+
   return (
     <div>
       <div className="eyebrow" style={{ marginBottom: 8 }}>I tuoi preferiti</div>
       <div className="fav-list">
-        {window.FAVORITES.map(fav => {
+        {favorites.map(fav => {
           const items = fav.items
             .map(([id, q, u]) => {
               const food = window.FOODS.find(f => f.id === id);
@@ -676,10 +690,16 @@ function FavoritesTab({ onPickFav }) {
                     {items.length ? items.map(i => i.food.name).join(' · ') : 'Alimenti non disponibili'}
                   </div>
                 </div>
-                <button className="iconbtn iconbtn-accent" style={{ width: 32, height: 32 }}
-                        onClick={() => onPickFav(fav)} disabled={items.length === 0} aria-label="Aggiungi">
-                  <Icon name="plus" size={16} />
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="iconbtn iconbtn-ghost" style={{ width: 32, height: 32, color: 'var(--ink-soft)' }}
+                          onClick={() => handleRemove(fav.id, fav.name)} aria-label="Elimina preferito">
+                    <Icon name="trash" size={15} />
+                  </button>
+                  <button className="iconbtn iconbtn-accent" style={{ width: 32, height: 32 }}
+                          onClick={() => onPickFav(fav)} disabled={items.length === 0} aria-label="Aggiungi">
+                    <Icon name="plus" size={16} />
+                  </button>
+                </div>
               </div>
               <div className="fav-macros">
                 <span><span className="num" style={{ fontWeight: 500 }}>{total.kcal}</span> kcal</span>

@@ -148,6 +148,10 @@ function mapFood(ean: string, product: OffProduct): ProxyFood {
     cleanText(product.product_name) ||
     `Prodotto ${ean}`;
   const category = categoryFromTags(product.categories_tags);
+  
+  // Calcolo calorie con fallback da kJ (energy_100g) a kcal se energy-kcal_100g manca
+  const rawKcal = n["energy-kcal_100g"] ?? (typeof n["energy_100g"] === "number" ? n["energy_100g"] / 4.184 : undefined);
+
   return {
     id: `off-${ean}`,
     source: "openfoodfacts",
@@ -155,7 +159,7 @@ function mapFood(ean: string, product: OffProduct): ProxyFood {
     name,
     cat: category,
     category,
-    kcal: round1(num(n["energy-kcal_100g"])),
+    kcal: round1(num(rawKcal)),
     p: round1(num(n["proteins_100g"])),
     c: round1(num(n["carbohydrates_100g"])),
     f: round1(num(n["fat_100g"])),
@@ -228,7 +232,7 @@ export function scoreQuality(product: OffProduct): ProductQuality {
       positives.push("Nessun additivo indicato");
       score += 3;
     } else if (additives <= 2) {
-      warnings.push(`${additives} additivi indicati`);
+      warnings.push(additives === 1 ? "1 additivo indicato" : `${additives} additivi indicati`);
       score -= 3;
     } else {
       negatives.push(`${additives} additivi indicati`);
@@ -307,7 +311,53 @@ function qualityGrade(
 }
 
 function categoryFromTags(tags: string[] | undefined): string {
-  const first = tags?.[0];
+  if (!tags || tags.length === 0) return "Generico";
+  
+  // Concatena tutti i tag in minuscolo per facilitare la ricerca di parole chiave
+  const text = tags.join(" ").toLowerCase();
+  
+  if (text.includes("pasta") || text.includes("primi piatti") || text.includes("noodle") || text.includes("pizza") || text.includes("lasagn")) {
+    return "Primi piatti";
+  }
+  if (text.includes("beverage") || text.includes("bevande") || text.includes("drink") || text.includes("soda") || text.includes("juice") || text.includes("tea") || text.includes("coffee") || text.includes("caffe")) {
+    return "Bevande";
+  }
+  if (text.includes("frutta secca") || text.includes("nuts") || text.includes("almond") || text.includes("walnut") || text.includes("mandorl") || text.includes("nocciol") || text.includes("noci")) {
+    return "Frutta secca";
+  }
+  if (text.includes("fruit") || text.includes("mela") || text.includes("banana") || text.includes("arancia") || text.includes("frutta")) {
+    return "Frutta";
+  }
+  if (text.includes("vegetable") || text.includes("verdure") || text.includes("tomato") || text.includes("potato") || text.includes("salad") || text.includes("spinach") || text.includes("pomodor")) {
+    return "Verdure";
+  }
+  if (text.includes("legume") || text.includes("ceci") || text.includes("lentil") || text.includes("beans") || text.includes("fagiol")) {
+    return "Legumi";
+  }
+  if (text.includes("bread") || text.includes("cereal") || text.includes("oat") || text.includes("wheat") || text.includes("rice") || text.includes("riso") || text.includes("pane") || text.includes("grain")) {
+    return "Pane & cereali";
+  }
+  if (text.includes("dairy") || text.includes("cheese") || text.includes("milk") || text.includes("yogurt") || text.includes("uova") || text.includes("latticini") || text.includes("egg") || text.includes("formagg") || text.includes("burro")) {
+    return "Uova & latticini";
+  }
+  if (text.includes("meat") || text.includes("carni") || text.includes("poultry") || text.includes("chicken") || text.includes("beef") || text.includes("pork") || text.includes("pollo") || text.includes("affettat") || text.includes("prosciutt")) {
+    return "Carni";
+  }
+  if (text.includes("fish") || text.includes("seafood") || text.includes("pesce") || text.includes("salmon") || text.includes("tuna") || text.includes("tonno") || text.includes("crostacei")) {
+    return "Pesci";
+  }
+  if (text.includes("sweet") || text.includes("dessert") || text.includes("chocolate") || text.includes("biscott") || text.includes("dolci") || text.includes("cookie") || text.includes("croissant") || text.includes("candy") || text.includes("torta")) {
+    return "Dolci";
+  }
+  if (text.includes("oil") || text.includes("sauce") || text.includes("condiment") || text.includes("dressing") || text.includes("spezie") || text.includes("aceto") || text.includes("sale")) {
+    return "Condimenti";
+  }
+  if (text.includes("cereal")) {
+    return "Cereali";
+  }
+  
+  // Fallback alla prima categoria capitalizzata
+  const first = tags[0];
   if (!first) return "Generico";
   const label = first.replace(/^[a-z]{2,3}:/, "").replace(/-/g, " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
