@@ -37,16 +37,18 @@ function AddMealSheet({ open, onClose, defaultSlot = 'colazione', onAdd }) {
   };
 
   const handleFavorite = (fav) => {
-    fav.items.forEach(([id, q]) => {
+    let added = 0;
+    fav.items.forEach(([id, q, u]) => {
       const food = window.FOODS.find(f => f.id === id);
       if (!food) return;
       const grams = window.servingToGrams(food, q);
       onAdd(slot, {
         id: 'e_' + Date.now() + Math.floor(Math.random() * 1e6),
-        foodId: id, qty: q, unit: food.unit, grams,
+        foodId: id, qty: q, unit: u || food.unit, grams,
       });
+      added += 1;
     });
-    onClose();
+    if (added > 0) onClose();
   };
 
   return (
@@ -656,21 +658,26 @@ function FavoritesTab({ onPickFav }) {
       <div className="eyebrow" style={{ marginBottom: 8 }}>I tuoi preferiti</div>
       <div className="fav-list">
         {window.FAVORITES.map(fav => {
-          const items = fav.items.map(([id, q, u]) => {
-            const food = window.FOODS.find(f => f.id === id);
-            const grams = window.servingToGrams(food, q);
-            return { food, qty: q, unit: u || food.unit, grams };
-          });
+          const items = fav.items
+            .map(([id, q, u]) => {
+              const food = window.FOODS.find(f => f.id === id);
+              if (!food) return null;
+              const grams = window.servingToGrams(food, q);
+              return { food, qty: q, unit: u || food.unit, grams };
+            })
+            .filter(Boolean);
           const total = window.totalMacros(items.map(i => ({ foodId: i.food.id, grams: i.grams })));
           return (
             <div key={fav.id} className="fav-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="fav-name display" style={{ fontSize: 16, fontStyle: 'italic' }}>{fav.name}</div>
-                  <div className="fav-items">{items.map(i => i.food.name).join(' · ')}</div>
+                  <div className="fav-items">
+                    {items.length ? items.map(i => i.food.name).join(' · ') : 'Alimenti non disponibili'}
+                  </div>
                 </div>
                 <button className="iconbtn iconbtn-accent" style={{ width: 32, height: 32 }}
-                        onClick={() => onPickFav(fav)} aria-label="Aggiungi">
+                        onClick={() => onPickFav(fav)} disabled={items.length === 0} aria-label="Aggiungi">
                   <Icon name="plus" size={16} />
                 </button>
               </div>

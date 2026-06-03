@@ -863,8 +863,20 @@ function loadZXingReader() {
       const script = document.createElement('script');
       script.src = '/vendor/zxing-browser.min.js';
       script.async = true;
-      script.onload = () => resolve(getZXingReader());
-      script.onerror = () => reject(new Error('ZXing non disponibile'));
+      script.onload = () => {
+        const reader = getZXingReader();
+        if (reader) resolve(reader);
+        else {
+          zxingLoadPromise = null;
+          script.remove();
+          reject(new Error('ZXing non disponibile'));
+        }
+      };
+      script.onerror = () => {
+        zxingLoadPromise = null;
+        script.remove();
+        reject(new Error('ZXing non disponibile'));
+      };
       document.head.appendChild(script);
     });
   }

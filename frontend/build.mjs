@@ -151,18 +151,24 @@ async function copyVendorFiles() {
   }
 }
 
-async function copyServiceWorker(bundleName) {
+function safeBuildId(value) {
+  return String(value || "dev").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || "dev";
+}
+
+async function copyServiceWorker(bundleName, buildId) {
   let sw = await readFile(path.join(PUBLIC, "sw.js"), "utf-8");
   const buildAssets = [
     `/${bundleName}`,
     "/vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js",
   ];
-  sw = sw.replace("const BUILD_ASSETS = [];", `const BUILD_ASSETS = ${JSON.stringify(buildAssets, null, 2)};`);
+  sw = sw
+    .replace('const CACHE_VERSION = "pasto-dev";', `const CACHE_VERSION = "pasto-${safeBuildId(buildId)}";`)
+    .replace("const BUILD_ASSETS = [];", `const BUILD_ASSETS = ${JSON.stringify(buildAssets, null, 2)};`);
   await writeFile(path.join(DIST, "sw.js"), sw);
 }
 
-async function copyIndexHtml(bundleName) {
+async function copyIndexHtml(bundleName, buildId) {
   let html = await readFile(path.join(ROOT, "index.html"), "utf-8");
   const preloadLinks = [
     '<link rel="preload" href="/vendor/react.production.min.js" as="script" />',
@@ -171,6 +177,7 @@ async function copyIndexHtml(bundleName) {
   ].join("\n");
   html = html
     .replace("<!-- PASTO_PRELOADS -->", preloadLinks)
+    .replace('window.PASTO_BUILD_ID = "dev";', `window.PASTO_BUILD_ID = "${safeBuildId(buildId)}";`)
     .replace("/bundle.js", `/${bundleName}`);
   await writeFile(path.join(DIST, "index.html"), html);
 }
@@ -190,14 +197,16 @@ async function build() {
     hash = createHash("sha1").update(result.code).digest("hex").slice(0, 8);
   }
   const bundleName = PROD ? `bundle.${hash}.js` : "bundle.js";
+  const deployId = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || hash || "dev";
+  const buildId = PROD ? safeBuildId(deployId) : "dev";
 
   await writeFile(path.join(DIST, bundleName), result.code);
   if (result.map) await writeFile(path.join(DIST, `${bundleName}.map`), result.map);
 
   await copyPublicFiles();
   await copyVendorFiles();
-  await copyServiceWorker(bundleName);
-  await copyIndexHtml(bundleName);
+  await copyServiceWorker(bundleName, buildId);
+  await copyIndexHtml(bundleName, buildId);
 
   console.log(`✓ dist/${bundleName}  (${(result.code.length / 1024).toFixed(1)} KB)`);
 }
@@ -233,7 +242,7 @@ async function serve() {
   watchers.push(
     watch(path.join(ROOT, "index.html"), async () => {
       try {
-        await copyIndexHtml("bundle.js");
+        await copyIndexHtml("bundle.js", "dev");
         console.log("↻ index.html copied");
       } catch {}
     }),

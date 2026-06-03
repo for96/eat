@@ -433,6 +433,7 @@
         if (!fav) throw new Error('Preferito non trovato');
         const entries = [];
         for (const item of fav.items) {
+          if (!state.foods.find((food) => food.id === item.foodId)) continue;
           entries.push(await window.api.meals.add({
             date,
             slot,

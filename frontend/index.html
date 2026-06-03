@@ -192,6 +192,49 @@
   <div class="splash">Pasto</div>
 </div>
 
+<script>
+  window.PASTO_BUILD_ID = "dev";
+
+  (function () {
+    const RESCUE_KEY = "pasto.splash-rescue";
+    const RESCUE_AFTER_MS = 9000;
+
+    function clearRescueFlag() {
+      try { sessionStorage.removeItem(RESCUE_KEY); } catch (e) {}
+    }
+
+    function reloadOnce() {
+      try {
+        if (sessionStorage.getItem(RESCUE_KEY)) return;
+        sessionStorage.setItem(RESCUE_KEY, String(Date.now()));
+      } catch (e) {}
+      window.location.reload();
+    }
+
+    window.PASTO_CLEAR_SPLASH_RESCUE = clearRescueFlag;
+
+    window.setTimeout(function () {
+      const splash = document.querySelector("#root .splash");
+      if (!splash) {
+        clearRescueFlag();
+        return;
+      }
+
+      splash.textContent = "Aggiornamento";
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistration()
+          .then(function (registration) {
+            return registration ? registration.update() : null;
+          })
+          .catch(function () {})
+          .finally(reloadOnce);
+      } else {
+        reloadOnce();
+      }
+    }, RESCUE_AFTER_MS);
+  })();
+</script>
+
 <!-- React 18: vendorizzato nella build, niente CDN JS al boot -->
 <script defer src="/vendor/react.production.min.js"></script>
 <script defer src="/vendor/react-dom.production.min.js"></script>
@@ -222,10 +265,37 @@
 <!-- Registrazione Service Worker (offline + installabile) -->
 <script>
   if ("serviceWorker" in navigator) {
+    let refreshingForUpdate = false;
+    const hadControllerAtBoot = Boolean(navigator.serviceWorker.controller);
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadControllerAtBoot || refreshingForUpdate) return;
+      refreshingForUpdate = true;
+      window.location.reload();
+    });
+
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch((err) =>
-        console.warn("[SW] registration failed:", err),
-      );
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
+        .then((registration) => {
+          registration.update().catch(() => {});
+
+          if (registration.waiting && hadControllerAtBoot) {
+            registration.waiting.postMessage({ type: "PASTO_SKIP_WAITING" });
+          }
+
+          registration.addEventListener("updatefound", () => {
+            const worker = registration.installing;
+            if (!worker) return;
+            worker.addEventListener("statechange", () => {
+              if (worker.state === "installed" && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: "PASTO_SKIP_WAITING" });
+              }
+            });
+          });
+        })
+        .catch((err) =>
+          console.warn("[SW] registration failed:", err),
+        );
     });
   }
 </script>
