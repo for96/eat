@@ -28,7 +28,6 @@ self.addEventListener("install", (event) => {
       Promise.allSettled(SHELL_ASSETS.map((u) => cache.add(u))),
     ),
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -60,6 +59,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data && (event.data.type === "EAT_SKIP_WAITING" || event.data.type === "PASTO_SKIP_WAITING")) {
+    self.skipWaiting();
+  }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 });

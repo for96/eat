@@ -184,6 +184,62 @@
     animation: spin 0.9s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Update banner style matching Pasto aesthetics */
+  .update-banner {
+    position: fixed;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    right: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-ui);
+    font-size: 13.5px;
+    z-index: 250;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    box-shadow:
+      0 12px 30px -10px rgba(31,27,22,.15),
+      0 4px 12px -5px rgba(31,27,22,.1);
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .update-banner.show {
+    display: flex;
+  }
+  .update-banner span {
+    font-weight: 500;
+  }
+  .update-banner button {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  .update-banner button:hover {
+    filter: brightness(1.15);
+  }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  
+  @media (max-width: 520px) {
+    .update-banner {
+      left: 16px;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      justify-content: space-between;
+    }
+  }
 </style>
 </head>
 <body data-palette="crema" data-density="regular" data-type="editoriale">
@@ -263,7 +319,7 @@
 <!-- Bundle dell'app: tutti i .jsx/.js concatenati e compilati da build.mjs -->
 <script defer src="/bundle.js"></script>
 
-<!-- Registrazione Service Worker (offline + installabile) -->
+<!-- Registrazione Service Worker (offline + installabile) con Prompt di Aggiornamento -->
 <script>
   if ("serviceWorker" in navigator) {
     let refreshingForUpdate = false;
@@ -281,7 +337,7 @@
           registration.update().catch(() => {});
 
           if (registration.waiting && hadControllerAtBoot) {
-            registration.waiting.postMessage({ type: "EAT_SKIP_WAITING" });
+            triggerUpdate(registration.waiting);
           }
 
           registration.addEventListener("updatefound", () => {
@@ -289,7 +345,7 @@
             if (!worker) return;
             worker.addEventListener("statechange", () => {
               if (worker.state === "installed" && navigator.serviceWorker.controller) {
-                worker.postMessage({ type: "EAT_SKIP_WAITING" });
+                triggerUpdate(worker);
               }
             });
           });
@@ -298,6 +354,22 @@
           console.warn("[SW] registration failed:", err),
         );
     });
+  }
+
+  function triggerUpdate(worker) {
+    let banner = document.getElementById("updateBanner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "updateBanner";
+      banner.className = "update-banner";
+      banner.innerHTML = "<span>Nuova versione disponibile</span> <button>Aggiorna</button>";
+      document.body.appendChild(banner);
+    }
+    banner.classList.add("show");
+    banner.querySelector("button").onclick = () => {
+      banner.classList.remove("show");
+      worker.postMessage({ type: "EAT_SKIP_WAITING" });
+    };
   }
 </script>
 

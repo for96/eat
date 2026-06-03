@@ -161,6 +161,7 @@ async function copyServiceWorker(bundleName, buildId) {
     `/${bundleName}`,
     "/vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js",
+    "/vendor/zxing-browser.min.js",
   ];
   sw = sw
     .replace('const CACHE_VERSION = "eat-dev";', `const CACHE_VERSION = "eat-${safeBuildId(buildId)}";`)
