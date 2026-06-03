@@ -353,13 +353,15 @@ function BottomNav({ tab, onChange, onAdd }) {
 
       <style>{`
         .bnav {
-          flex-shrink: 0;
           display: grid; grid-template-columns: 1fr 1fr 60px 1fr 1fr;
           align-items: center;
-          padding: 5px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+          padding: 5px 16px calc(2px + env(safe-area-inset-bottom, 0px));
           background: linear-gradient(180deg, transparent, var(--bg) 30%);
           gap: 4px;
-          position: relative;
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
           z-index: 20;
           touch-action: manipulation;
           -webkit-user-select: none;
