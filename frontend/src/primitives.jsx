@@ -160,20 +160,32 @@ function Sheet({ open, onClose, title, children, maxHeight = '85%' }) {
   const [mounted, setMounted] = useState(open);
   const [vis, setVis] = useState(false);
   useEffect(() => {
+    let frame1;
+    let frame2;
+    let timer;
+
     if (open) {
       setMounted(true);
-      requestAnimationFrame(() => setVis(true));
+      setVis(false);
+      frame1 = requestAnimationFrame(() => {
+        frame2 = requestAnimationFrame(() => setVis(true));
+      });
     } else {
       setVis(false);
-      const t = setTimeout(() => setMounted(false), 260);
-      return () => clearTimeout(t);
+      timer = setTimeout(() => setMounted(false), 260);
     }
+
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+      clearTimeout(timer);
+    };
   }, [open]);
   if (!mounted) return null;
   return (
     <div className={`sheet-wrap ${vis ? 'on' : ''}`}>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" style={{ maxHeight }}>
+      <div className="sheet" style={{ maxHeight }} role="dialog" aria-modal="true">
         <div className="sheet-grab" />
         {title && (
           <div className="sheet-head">
@@ -186,7 +198,7 @@ function Sheet({ open, onClose, title, children, maxHeight = '85%' }) {
         <div className="sheet-body">{children}</div>
       </div>
       <style>{`
-        .sheet-wrap { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+        .sheet-wrap { position: absolute; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
         .sheet-wrap.on { pointer-events: auto; }
         .sheet-backdrop {
           position: absolute; inset: 0;
@@ -201,20 +213,25 @@ function Sheet({ open, onClose, title, children, maxHeight = '85%' }) {
           border-top-left-radius: 28px;
           border-top-right-radius: 28px;
           border-top: 1px solid var(--line);
-          transform: translateY(100%);
+          min-height: 0;
+          overflow: hidden;
+          transform: translate3d(0, calc(100% + 12px), 0);
           transition: transform 0.28s cubic-bezier(.3,.7,.4,1);
           display: flex; flex-direction: column;
+          will-change: transform;
+          backface-visibility: hidden;
+          contain: layout paint;
           box-shadow: 0 -10px 30px rgba(31,27,22,.15);
         }
-        .sheet-wrap.on .sheet { transform: translateY(0); }
+        .sheet-wrap.on .sheet { transform: translate3d(0, 0, 0); }
         .sheet-grab { width: 36px; height: 4px; border-radius: 4px; background: var(--ink-faint);
           margin: 10px auto 0; opacity: 0.5; flex-shrink: 0; }
         .sheet-head { display: flex; justify-content: space-between; align-items: center;
           padding: 14px 20px 8px; flex-shrink: 0; }
         .sheet-title { font-size: 22px; font-weight: 400; font-style: italic; color: var(--ink); }
         body[data-type="moderno"] .sheet-title { font-style: normal; font-weight: 600; letter-spacing: -.01em; }
-        .sheet-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 0 20px 24px;
-          scrollbar-width: none; }
+        .sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 20px 24px;
+          overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
         .sheet-body::-webkit-scrollbar { display: none; }
       `}</style>
     </div>

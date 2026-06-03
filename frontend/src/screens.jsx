@@ -987,6 +987,7 @@ function QualityList({ title, items, tone, empty }) {
 // ════════════════════════════════════════════════════════════════════════
 function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE, onProfileChange, history = {}, scans = [] }) {
   const setG = (key, v) => onGoalsChange({ ...goals, [key]: v });
+  const setCaloriesGoal = (kcal) => onGoalsChange(scaleGoalsToCalories(goals, kcal));
   const [section, setSection] = useStateSc('goals');
   const safeProfile = { ...(window.DEFAULT_PROFILE || {}), ...(profile || {}) };
 
@@ -1041,7 +1042,7 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
               <div className="eyebrow">Calorie</div>
               <span className="display num" style={{ fontSize: 22 }}>{goals.kcal}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> kcal</span></span>
             </div>
-            <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={v => setG('kcal', v)} />
+            <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={setCaloriesGoal} />
           </div>
 
           <div className="card" style={{ marginTop: 12 }}>
@@ -1464,6 +1465,36 @@ function SliderRow({ value, min, max, step, onChange, color }) {
       `}</style>
     </div>
   );
+}
+
+function scaleGoalsToCalories(goals, kcal) {
+  const split = macroEnergySplit(goals);
+  return {
+    ...goals,
+    kcal,
+    p: roundGoalGrams((kcal * split.p) / 4),
+    c: roundGoalGrams((kcal * split.c) / 4),
+    fat: roundGoalGrams((kcal * split.fat) / 9),
+  };
+}
+
+function macroEnergySplit(goals) {
+  const protein = Math.max(0, Number(goals.p) || 0) * 4;
+  const carbs = Math.max(0, Number(goals.c) || 0) * 4;
+  const fat = Math.max(0, Number(goals.fat) || 0) * 9;
+  const total = protein + carbs + fat;
+  if (total <= 0) {
+    return { p: 0.22, c: 0.48, fat: 0.30 };
+  }
+  return {
+    p: protein / total,
+    c: carbs / total,
+    fat: fat / total,
+  };
+}
+
+function roundGoalGrams(value) {
+  return Math.max(0, Math.round(value / 5) * 5);
 }
 
 function MacroGoalRow({ label, color, value, pct, max, onChange }) {
