@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Pasto — diario nutrizionale</title>
+<title>eat — diario nutrizionale</title>
 
 <!-- PWA manifest + iOS web-app meta -->
 <link rel="manifest" href="/manifest.webmanifest" />
@@ -11,14 +11,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Pasto" />
+<meta name="apple-mobile-web-app-title" content="eat" />
 <meta name="theme-color" content="#F2ECDF" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#161310" media="(prefers-color-scheme: dark)" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Instrument+Serif:ital@0;1&family=DM+Serif+Display:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-<!-- PASTO_PRELOADS -->
+<!-- EAT_PRELOADS -->
 
 <style>
   :root {
@@ -189,14 +189,14 @@
 <body data-palette="crema" data-density="regular" data-type="editoriale">
 
 <div id="root">
-  <div class="splash">Pasto</div>
+  <div class="splash">eat</div>
 </div>
 
 <script>
-  window.PASTO_BUILD_ID = "dev";
+  window.EAT_BUILD_ID = "dev";
 
   (function () {
-    const RESCUE_KEY = "pasto.splash-rescue";
+    const RESCUE_KEY = "eat.splash-rescue";
     const RESCUE_AFTER_MS = 9000;
 
     function clearRescueFlag() {
@@ -211,7 +211,7 @@
       window.location.reload();
     }
 
-    window.PASTO_CLEAR_SPLASH_RESCUE = clearRescueFlag;
+    window.EAT_CLEAR_SPLASH_RESCUE = clearRescueFlag;
 
     window.setTimeout(function () {
       const splash = document.querySelector("#root .splash");
@@ -241,7 +241,7 @@
 
 <!-- Default tweaks. Cambia qui se vuoi che parta in notte/bosco/carta. -->
 <script>
-  window.PASTO_DEFAULTS = {
+  window.EAT_DEFAULTS = {
     palette: "crema",
     density: "regular",
     typography: "editoriale"
@@ -249,13 +249,14 @@
   // Light mode = crema, dark mode = notte. Se l'utente del sistema preferisce
   // dark e non c'è ancora una preferenza salvata, switcha al boot.
   try {
-    const saved = localStorage.getItem("pasto.palette");
+    const saved = localStorage.getItem("eat.palette") || localStorage.getItem("pasto.palette");
     if (saved) {
-      window.PASTO_DEFAULTS.palette = saved;
+      window.EAT_DEFAULTS.palette = saved;
+      localStorage.setItem("eat.palette", saved);
     } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      window.PASTO_DEFAULTS.palette = "notte";
+      window.EAT_DEFAULTS.palette = "notte";
     }
-    document.body.dataset.palette = window.PASTO_DEFAULTS.palette;
+    document.body.dataset.palette = window.EAT_DEFAULTS.palette;
   } catch (e) { /* localStorage non disponibile in modalità privata, ignora */ }
 </script>
 
@@ -280,7 +281,7 @@
           registration.update().catch(() => {});
 
           if (registration.waiting && hadControllerAtBoot) {
-            registration.waiting.postMessage({ type: "PASTO_SKIP_WAITING" });
+            registration.waiting.postMessage({ type: "EAT_SKIP_WAITING" });
           }
 
           registration.addEventListener("updatefound", () => {
@@ -288,7 +289,7 @@
             if (!worker) return;
             worker.addEventListener("statechange", () => {
               if (worker.state === "installed" && navigator.serviceWorker.controller) {
-                worker.postMessage({ type: "PASTO_SKIP_WAITING" });
+                worker.postMessage({ type: "EAT_SKIP_WAITING" });
               }
             });
           });

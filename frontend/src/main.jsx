@@ -19,7 +19,7 @@ function bootStateWithToday(boot) {
 
 function App() {
   // ── tweaks ──
-  const [tw, setTweak] = useTweaks(window.PASTO_DEFAULTS);
+  const [tw, setTweak] = useTweaks(window.EAT_DEFAULTS);
   useEffectApp(() => {
     document.body.dataset.palette = tw.palette;
     document.body.dataset.density = tw.density;
@@ -319,7 +319,7 @@ function BottomNav({ tab, onChange, onAdd }) {
           flex-shrink: 0;
           display: grid; grid-template-columns: 1fr 1fr 64px 1fr 1fr;
           align-items: center;
-          padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+          padding: 7px 16px calc(10px + env(safe-area-inset-bottom, 0px));
           background: linear-gradient(180deg, transparent, var(--bg) 30%);
           gap: 4px;
           position: relative;
@@ -332,14 +332,14 @@ function BottomNav({ tab, onChange, onAdd }) {
         .nav-btn {
           appearance: none; border: 0; background: transparent;
           display: flex; flex-direction: column; align-items: center; gap: 2px;
-          padding: 6px 4px; cursor: pointer; color: var(--ink-faint);
+          padding: 5px 4px; cursor: pointer; color: var(--ink-faint);
           font: inherit; font-size: 10px; font-weight: 500; letter-spacing: 0.02em;
           transition: color 0.15s;
         }
         .nav-btn.on { color: var(--ink); }
         .nav-btn:hover:not(.on) { color: var(--ink-soft); }
         .fab {
-          width: 52px; height: 52px; border-radius: 26px;
+          width: 48px; height: 48px; border-radius: 24px;
           background: var(--accent); color: #fff; border: 0; cursor: pointer;
           display: grid; place-items: center;
           margin: 0 auto;

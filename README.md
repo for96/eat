@@ -1,4 +1,4 @@
-# Pasto
+# eat
 
 Diario nutrizionale installabile come PWA. La nuova architettura e local-first: pasti, acqua, obiettivi, preferiti, scansioni e prodotti salvati vivono nel browser; il backend e solo un proxy leggero verso Open Food Facts.
 

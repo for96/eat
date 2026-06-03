@@ -3,17 +3,17 @@
 
 (function () {
   const CURRENT_VERSION = 3;
-  const STORAGE_KEY = 'pasto.local.v3';
-  const LEGACY_STORAGE_KEYS = ['pasto.local.v2'];
+  const STORAGE_KEY = 'eat.local.v3';
+  const LEGACY_STORAGE_KEYS = ['pasto.local.v3', 'pasto.local.v2'];
   const MAX_SCANS = 60;
   const isLocalDev =
     typeof location !== 'undefined' &&
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
     location.port !== '3000';
-  const explicit = typeof window !== 'undefined' ? window.PASTO_API_BASE : undefined;
+  const explicit = typeof window !== 'undefined' ? window.EAT_API_BASE : undefined;
   const BASE = (explicit ?? (isLocalDev ? 'http://localhost:3000' : '')) + '/api/v1';
 
-  const seed = window.PASTO_SEED || { foods: [], favorites: [], default_goals: window.DEFAULT_GOALS };
+  const seed = window.EAT_SEED || { foods: [], favorites: [], default_goals: window.DEFAULT_GOALS };
 
   function normalizeProfile(profile = {}) {
     profile = profile && typeof profile === 'object' ? profile : {};
@@ -382,7 +382,7 @@
             return next;
           }
         }
-        throw new Error('Pasto non trovato');
+        throw new Error('Elemento non trovato');
       },
       remove: async (id) => {
         for (const day of Object.values(state.history)) {

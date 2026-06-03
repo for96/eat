@@ -20,7 +20,7 @@ const server = createServer(async (req, res) => {
     }
     res.end(appRes.body);
   } catch (error) {
-    console.error("Errore proxy Pasto:", error);
+    console.error("Errore proxy eat:", error);
     res.statusCode = 500;
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify({ error: "Internal Server Error" }));
@@ -28,7 +28,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(env.PORT, env.HOST, () => {
-  console.log(`Pasto proxy in ascolto su http://${env.HOST}:${env.PORT}`);
+  console.log(`eat proxy in ascolto su http://${env.HOST}:${env.PORT}`);
 });
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {

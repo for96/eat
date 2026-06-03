@@ -136,7 +136,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
     const existing = await prisma.mealEntry.findFirst({
       where: { id, userId },
     });
-    if (!existing) throw new HttpError(404, "Pasto non trovato");
+    if (!existing) throw new HttpError(404, "Elemento non trovato");
 
     let updateData: Parameters<typeof prisma.mealEntry.update>[0]["data"] = {};
     if (patch.slot) updateData.slot = patch.slot;
@@ -172,7 +172,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
     const existing = await prisma.mealEntry.findFirst({
       where: { id, userId },
     });
-    if (!existing) throw new HttpError(404, "Pasto non trovato");
+    if (!existing) throw new HttpError(404, "Elemento non trovato");
     await prisma.mealEntry.delete({ where: { id } });
     reply.code(204);
   });

@@ -32,7 +32,7 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
 
     reply.header(
       "Content-Disposition",
-      `attachment; filename="pasto-export-${userId}-${Date.now()}.json"`,
+      `attachment; filename="eat-export-${userId}-${Date.now()}.json"`,
     );
     return {
       version: 1,

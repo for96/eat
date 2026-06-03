@@ -163,7 +163,7 @@ async function copyServiceWorker(bundleName, buildId) {
     "/vendor/react-dom.production.min.js",
   ];
   sw = sw
-    .replace('const CACHE_VERSION = "pasto-dev";', `const CACHE_VERSION = "pasto-${safeBuildId(buildId)}";`)
+    .replace('const CACHE_VERSION = "eat-dev";', `const CACHE_VERSION = "eat-${safeBuildId(buildId)}";`)
     .replace("const BUILD_ASSETS = [];", `const BUILD_ASSETS = ${JSON.stringify(buildAssets, null, 2)};`);
   await writeFile(path.join(DIST, "sw.js"), sw);
 }
@@ -176,8 +176,8 @@ async function copyIndexHtml(bundleName, buildId) {
     `<link rel="preload" href="/${bundleName}" as="script" />`,
   ].join("\n");
   html = html
-    .replace("<!-- PASTO_PRELOADS -->", preloadLinks)
-    .replace('window.PASTO_BUILD_ID = "dev";', `window.PASTO_BUILD_ID = "${safeBuildId(buildId)}";`)
+    .replace("<!-- EAT_PRELOADS -->", preloadLinks)
+    .replace('window.EAT_BUILD_ID = "dev";', `window.EAT_BUILD_ID = "${safeBuildId(buildId)}";`)
     .replace("/bundle.js", `/${bundleName}`);
   await writeFile(path.join(DIST, "index.html"), html);
 }

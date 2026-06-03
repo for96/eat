@@ -1,6 +1,6 @@
 {
-  "name": "Pasto — diario nutrizionale",
-  "short_name": "Pasto",
+  "name": "eat — diario nutrizionale",
+  "short_name": "eat",
   "description": "Diario nutrizionale: pasti, acqua, macros, obiettivi.",
   "start_url": "/",
   "scope": "/",

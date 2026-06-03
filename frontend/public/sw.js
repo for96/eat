@@ -1,4 +1,4 @@
-// sw.js - service worker minimale per Pasto.
+// sw.js - service worker minimale per eat.
 //
 // Strategia:
 // - HTML/navigation network-first: dopo un deploy la PWA prende subito la nuova shell.
@@ -7,7 +7,7 @@
 //
 // CACHE_VERSION viene sostituito da build.mjs con l'id del deploy.
 
-const CACHE_VERSION = "pasto-dev";
+const CACHE_VERSION = "eat-dev";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const FONTS_CACHE = `${CACHE_VERSION}-fonts`;
 const BUILD_ASSETS = [];
@@ -35,15 +35,17 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      const oldPastoCaches = keys.filter((key) => key.startsWith("pasto-") && !key.startsWith(CACHE_VERSION));
-      await Promise.all(oldPastoCaches.map((key) => caches.delete(key)));
+      const oldEatCaches = keys.filter((key) =>
+        (key.startsWith("eat-") || key.startsWith("pasto-")) && !key.startsWith(CACHE_VERSION),
+      );
+      await Promise.all(oldEatCaches.map((key) => caches.delete(key)));
       await self.clients.claim();
 
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       await Promise.all(
         clients.map(async (client) => {
-          client.postMessage({ type: "PASTO_SW_READY", version: CACHE_VERSION });
-          if (oldPastoCaches.length > 0 && "navigate" in client) {
+          client.postMessage({ type: "EAT_SW_READY", version: CACHE_VERSION });
+          if (oldEatCaches.length > 0 && "navigate" in client) {
             try {
               await client.navigate(client.url);
             } catch (e) {
@@ -57,7 +59,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "PASTO_SKIP_WAITING") {
+  if (event.data && (event.data.type === "EAT_SKIP_WAITING" || event.data.type === "PASTO_SKIP_WAITING")) {
     self.skipWaiting();
   }
 });

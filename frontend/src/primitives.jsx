@@ -291,9 +291,9 @@ Object.assign(window, {
 
 // ─── Shared button styles ──────────────────────────────────────────────
 // Injected once on first script run.
-if (!document.getElementById('pasto-base-css')) {
+if (!document.getElementById('eat-base-css')) {
   const style = document.createElement('style');
-  style.id = 'pasto-base-css';
+  style.id = 'eat-base-css';
   style.textContent = `
     .iconbtn {
       appearance: none; border: 0; background: transparent;

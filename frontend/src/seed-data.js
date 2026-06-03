@@ -1,5 +1,5 @@
 // Generated from prisma/foods-seed.json for local-first startup.
-window.PASTO_SEED = {
+window.EAT_SEED = {
   "version": 1,
   "generated_at": "2026-05-18T23:03:29.832Z",
   "foods": [

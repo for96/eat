@@ -1011,7 +1011,7 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
         </div>
       </header>
 
-      <button className="profile-summary" onClick={() => setSection('profile')} aria-label="Modifica profilo">
+      <div className="profile-summary">
         <ProfileAvatar profile={safeProfile} size={44} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1019,11 +1019,12 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
           </div>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{profileSummaryLine(safeProfile)}</div>
         </div>
-        <Icon name="edit" size={16} style={{ color: 'var(--ink-faint)' }} />
-      </button>
+        <button className="profile-edit-btn" onClick={() => setSection('profile')} aria-label="Modifica profilo">
+          <Icon name="edit" size={16} />
+        </button>
+      </div>
 
       <div className="profile-tabs">
-        <button className={section === 'profile' ? 'on' : ''} onClick={() => setSection('profile')}>Dati</button>
         <button className={section === 'goals' ? 'on' : ''} onClick={() => setSection('goals')}>Obiettivi</button>
         <button className={section === 'history' ? 'on' : ''} onClick={() => setSection('history')}>Storico</button>
         <button className={section === 'scans' ? 'on' : ''} onClick={() => setSection('scans')}>Scansioni</button>
@@ -1084,17 +1085,20 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
         .prof-title { font-size: 24px; font-weight: 400; font-style: italic; margin: 4px 0 0;
           text-transform: lowercase; letter-spacing: -0.01em; }
         body[data-type="moderno"] .prof-title { font-style: normal; font-weight: 600; text-transform: none; }
-        .profile-summary { appearance: none; width: 100%; color: inherit; font: inherit; text-align: left;
-          display: flex; align-items: center; gap: 14px; cursor: pointer;
+        .profile-summary { width: 100%; color: inherit; text-align: left;
+          display: flex; align-items: center; gap: 14px;
           background: var(--surface); border: 1px solid var(--line);
           border-radius: var(--radius); padding: 14px; }
-        .profile-summary:hover { border-color: var(--ink-faint); }
+        .profile-edit-btn { appearance: none; border: 1px solid var(--line); background: var(--surface-2);
+          width: 34px; height: 34px; border-radius: 999px; color: var(--ink-soft); cursor: pointer;
+          display: grid; place-items: center; flex-shrink: 0; transition: color .15s, border-color .15s, background .15s; }
+        .profile-edit-btn:hover { color: var(--ink); border-color: var(--ink-faint); background: var(--bg); }
         .prof-avatar { border-radius: 999px; overflow: hidden;
           background: var(--accent); color: #fff;
           display: grid; place-items: center;
           font-family: var(--font-display); font-size: 22px; font-style: italic; flex-shrink: 0; }
         .prof-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .profile-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+        .profile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
           background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
           padding: 4px; margin-top: 12px; }
         .profile-tabs button { appearance: none; border: 0; background: transparent; color: var(--ink-soft);
