@@ -38,13 +38,13 @@ window.DEFAULT_PROFILE = {
 // snapshotta una copia su MealEntry, ma per la UI rendiamo dal Food corrente.
 window.EAT_GOAL_LIMITS = {
   kcalMin: 1200,
-  kcalMax: 3800,
-  proteinPctMin: 0.16,
-  proteinPctMax: 0.35,
-  carbsPctMin: 0.25,
-  carbsPctMax: 0.60,
-  fatPctMin: 0.20,
-  fatPctMax: 0.40,
+  kcalMax: 4500,
+  proteinPctMin: 0.10,
+  proteinPctMax: 0.45,
+  carbsPctMin: 0.10,
+  carbsPctMax: 0.72,
+  fatPctMin: 0.12,
+  fatPctMax: 0.55,
 };
 
 window.profileEnergyEstimate = function (profile = window.DEFAULT_PROFILE) {
@@ -54,19 +54,25 @@ window.profileEnergyEstimate = function (profile = window.DEFAULT_PROFILE) {
     : (10 * p.weightKg) + (6.25 * p.heightCm) - (5 * p.age) + 5;
   const activityFactor = {
     sedentary: 1.20,
-    light: 1.32,
-    moderate: 1.45,
-    high: 1.60,
+    light: 1.375,
+    moderate: 1.55,
+    high: 1.725,
   }[p.activityLevel] || 1.20;
   const expectedMinutes = {
     sedentary: 0,
-    light: 120,
-    moderate: 240,
-    high: 420,
+    light: 150,
+    moderate: 300,
+    high: 450,
   }[p.activityLevel] || 0;
-  const minuteDelta = clampGoalNumber(p.activityMinutesWeek - expectedMinutes, -180, 360);
-  const tdee = Math.max(1000, (bmr * activityFactor) + ((minuteDelta * 4.5) / 7));
-  const goalDelta = p.weightGoal === 'lose' ? -400 : p.weightGoal === 'gain' ? 300 : 0;
+  const minuteDelta = clampGoalNumber(p.activityMinutesWeek - expectedMinutes, -240, 480);
+  const exerciseKcalMinute = p.weightKg * 0.0175 * 5.5;
+  const tdee = Math.max(1000, (bmr * activityFactor) + ((minuteDelta * exerciseKcalMinute) / 7));
+  const targetDeltaKg = p.targetWeightKg - p.weightKg;
+  const goalDelta = p.weightGoal === 'lose'
+    ? (targetDeltaKg < -8 ? -550 : targetDeltaKg < -2 ? -450 : -300)
+    : p.weightGoal === 'gain'
+      ? (targetDeltaKg > 8 ? 450 : targetDeltaKg > 2 ? 350 : 250)
+      : 0;
   const recommendedKcal = clampGoalNumber(
     roundToStep(tdee + goalDelta, 50),
     window.EAT_GOAL_LIMITS.kcalMin,
@@ -93,13 +99,13 @@ window.recommendedGoalsForProfile = function (profile = window.DEFAULT_PROFILE, 
     : p.weightKg;
   const activityProteinBump = p.activityLevel === 'high' ? 0.15 : p.activityLevel === 'moderate' ? 0.08 : 0;
   const proteinPerKg = ({
-    lose: 1.75,
-    maintain: 1.45,
-    gain: 1.60,
-  }[p.weightGoal] || 1.45) + activityProteinBump;
+    lose: 1.85,
+    maintain: 1.55,
+    gain: 1.70,
+  }[p.weightGoal] || 1.55) + activityProteinBump;
   const ranges = window.macroGoalRanges({ kcal }, p);
   const protein = roundToStep(clampGoalNumber(weightRef * proteinPerKg, ranges.p.min, ranges.p.max), 5);
-  const fatPct = p.weightGoal === 'gain' ? 0.27 : p.weightGoal === 'lose' ? 0.30 : 0.29;
+  const fatPct = p.weightGoal === 'gain' ? 0.26 : p.weightGoal === 'lose' ? 0.30 : 0.28;
   let fat = roundToStep(clampGoalNumber((kcal * fatPct) / 9, ranges.fat.min, ranges.fat.max), 5);
   let carbs = roundToStep((kcal - (protein * 4) - (fat * 9)) / 4, 5);
 
@@ -128,12 +134,12 @@ window.macroGoalRanges = function (goals = window.DEFAULT_GOALS, profile = windo
     window.EAT_GOAL_LIMITS.kcalMax,
   );
   const limits = window.EAT_GOAL_LIMITS;
-  const proteinMin = Math.max(40, (kcal * limits.proteinPctMin) / 4);
-  const proteinMax = Math.min(260, (kcal * limits.proteinPctMax) / 4, Math.max(90, p.weightKg * 2.3));
-  const carbsMin = Math.max(75, (kcal * limits.carbsPctMin) / 4);
-  const carbsMax = Math.min(570, (kcal * limits.carbsPctMax) / 4);
-  const fatMin = Math.max(30, (kcal * limits.fatPctMin) / 9);
-  const fatMax = Math.min(170, (kcal * limits.fatPctMax) / 9);
+  const proteinMin = Math.max(35, p.weightKg * 0.7, (kcal * limits.proteinPctMin) / 4);
+  const proteinMax = Math.min(320, (kcal * limits.proteinPctMax) / 4, Math.max(120, p.weightKg * 2.8));
+  const carbsMin = Math.max(45, (kcal * limits.carbsPctMin) / 4);
+  const carbsMax = Math.min(760, (kcal * limits.carbsPctMax) / 4);
+  const fatMin = Math.max(25, (kcal * limits.fatPctMin) / 9);
+  const fatMax = Math.min(250, (kcal * limits.fatPctMax) / 9);
   return {
     kcal: { min: limits.kcalMin, max: limits.kcalMax, step: 50 },
     p: goalRange(proteinMin, proteinMax, 5),
@@ -152,6 +158,15 @@ window.balanceGoalsToKcal = function (goals = window.DEFAULT_GOALS, profile = wi
   );
   const recommended = window.recommendedGoalsForProfile(profile, kcal, { keepWaterMl: goals.water_ml });
   const ranges = window.macroGoalRanges({ kcal }, profile);
+
+  if (changedKey === 'kcal') {
+    return {
+      ...goals,
+      ...recommended,
+      water_ml: clampGoalValue(goals.water_ml ?? recommended.water_ml, ranges.water_ml),
+    };
+  }
+
   let protein = clampGoalValue(goals.p ?? recommended.p, ranges.p);
   let carbs = clampGoalValue(goals.c ?? recommended.c, ranges.c);
   let fat = clampGoalValue(goals.fat ?? recommended.fat, ranges.fat);

@@ -141,7 +141,6 @@ function SearchTab({ onPick }) {
       <div className="search-wrap">
         <Icon name="search" size={17} />
         <input
-          autoFocus
           className="search-input"
           placeholder="Cerca alimento..."
           value={q}

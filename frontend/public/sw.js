@@ -44,13 +44,6 @@ self.addEventListener("activate", (event) => {
       await Promise.all(
         clients.map(async (client) => {
           client.postMessage({ type: "EAT_SW_READY", version: CACHE_VERSION });
-          if (oldEatCaches.length > 0 && "navigate" in client) {
-            try {
-              await client.navigate(client.url);
-            } catch (e) {
-              // Alcuni browser mobile possono ignorare navigate(): l'app usera' il fallback in index.html.
-            }
-          }
         }),
       );
     })(),
@@ -102,17 +95,20 @@ self.addEventListener("fetch", (event) => {
 
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
-  try {
-    const res = await fetch(request);
+  const fetchPromise = fetch(request).then(async (res) => {
     if (res.ok) {
       await cache.put("/index.html", res.clone());
       await cache.put("/", res.clone());
     }
     return res;
+  });
+
+  try {
+    return await withTimeout(fetchPromise, 3500);
   } catch (e) {
     const cached = await cache.match("/index.html") || await cache.match("/");
     if (cached) return cached;
-    throw e;
+    return fetchPromise;
   }
 }
 
@@ -126,4 +122,13 @@ async function staleWhileRevalidate(request, cacheName) {
     })
     .catch(() => cached);
   return cached || fetchPromise;
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("timeout")), ms);
+    }),
+  ]);
 }

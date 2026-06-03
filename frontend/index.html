@@ -272,6 +272,17 @@
       event.preventDefault();
     }
 
+    function eventElement(event) {
+      if (!event.target) return null;
+      if (event.target.nodeType === 1) return event.target;
+      return event.target.parentElement || null;
+    }
+
+    function isInteractive(event) {
+      const target = eventElement(event);
+      return Boolean(target && target.closest("button,a,input,select,textarea,label,[role='button']"));
+    }
+
     function nearestScrollable(node) {
       while (node && node !== document.body) {
         if (node.nodeType === 1) {
@@ -299,6 +310,8 @@
     }, { passive: true });
 
     document.addEventListener("touchmove", (event) => {
+      if (isInteractive(event)) return;
+
       if (event.touches.length > 1) {
         event.preventDefault();
         return;
@@ -327,7 +340,7 @@
     }, { passive: false });
 
     document.addEventListener("touchend", (event) => {
-      if (event.target.closest("button,a,input,select,textarea,[role='button']")) {
+      if (isInteractive(event)) {
         lastTouchEnd = 0;
         return;
       }
@@ -345,7 +358,7 @@
 
   (function () {
     const RESCUE_KEY = "eat.splash-rescue";
-    const RESCUE_AFTER_MS = 9000;
+    const RESCUE_AFTER_MS = 6000;
 
     function clearRescueFlag() {
       try { sessionStorage.removeItem(RESCUE_KEY); } catch (e) {}
@@ -369,10 +382,24 @@
       }
 
       splash.textContent = "Aggiornamento";
+      if (typeof window.EAT_REFRESH_APP === "function") {
+        try {
+          if (sessionStorage.getItem(RESCUE_KEY)) return;
+          sessionStorage.setItem(RESCUE_KEY, String(Date.now()));
+        } catch (e) {}
+        window.EAT_REFRESH_APP();
+        return;
+      }
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistration()
+        Promise.race([
+          navigator.serviceWorker.getRegistration()
+            .then(function (registration) {
+              return registration ? registration.update() : null;
+            }),
+          new Promise(function (resolve) { window.setTimeout(resolve, 2500); }),
+        ])
           .then(function (registration) {
-            return registration ? registration.update() : null;
+            return registration || null;
           })
           .catch(function () {})
           .finally(reloadOnce);
@@ -413,56 +440,176 @@
 
 <!-- Registrazione Service Worker (offline + installabile) con Prompt di Aggiornamento -->
 <script>
-  if ("serviceWorker" in navigator) {
+  (function () {
+    const UPDATE_RELOAD_KEY = "eat.update-reload";
+
+    if (!("serviceWorker" in navigator)) {
+      window.EAT_REFRESH_APP = function () { window.location.reload(); };
+      return;
+    }
+
     let refreshingForUpdate = false;
     const hadControllerAtBoot = Boolean(navigator.serviceWorker.controller);
 
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (!hadControllerAtBoot || refreshingForUpdate) return;
-      refreshingForUpdate = true;
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise(function (_, reject) {
+          window.setTimeout(function () { reject(new Error("timeout")); }, ms);
+        }),
+      ]);
+    }
+
+    function markUpdateReload() {
+      try { sessionStorage.setItem(UPDATE_RELOAD_KEY, String(Date.now())); } catch (e) {}
+    }
+
+    function clearUpdateReload() {
+      try { sessionStorage.removeItem(UPDATE_RELOAD_KEY); } catch (e) {}
+    }
+
+    function needsUpdateReload() {
+      try { return Boolean(sessionStorage.getItem(UPDATE_RELOAD_KEY)); } catch (e) { return false; }
+    }
+
+    function reloadApp() {
+      clearUpdateReload();
       window.location.reload();
+    }
+
+    async function clearAppCaches() {
+      if (!("caches" in window)) return;
+      try {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter(function (key) { return key.startsWith("eat-") || key.startsWith("pasto-"); })
+            .map(function (key) { return caches.delete(key); }),
+        );
+      } catch (e) {}
+    }
+
+    async function hardReloadApp() {
+      clearUpdateReload();
+      await clearAppCaches();
+      window.location.reload();
+    }
+
+    function applyWorker(worker) {
+      if (!worker) {
+        reloadApp();
+        return;
+      }
+      markUpdateReload();
+
+      if (worker.state === "installed" || worker.state === "activated") {
+        worker.postMessage({ type: "EAT_SKIP_WAITING" });
+      } else {
+        worker.addEventListener("statechange", function onStateChange() {
+          if (worker.state === "installed") {
+            worker.removeEventListener("statechange", onStateChange);
+            worker.postMessage({ type: "EAT_SKIP_WAITING" });
+          }
+        });
+      }
+
+      window.setTimeout(function () {
+        if (!refreshingForUpdate) reloadApp();
+      }, 1600);
+    }
+
+    window.EAT_REFRESH_APP = async function (workerHint) {
+      if (workerHint) {
+        applyWorker(workerHint);
+        return;
+      }
+
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          await hardReloadApp();
+          return;
+        }
+
+        const existingWorker = registration.waiting || registration.installing;
+        if (existingWorker) {
+          applyWorker(existingWorker);
+          return;
+        }
+
+        const updatedRegistration = await withTimeout(registration.update(), 4500).catch(function () {
+          return registration;
+        });
+        const nextWorker = updatedRegistration.waiting || updatedRegistration.installing;
+        if (nextWorker) {
+          applyWorker(nextWorker);
+          return;
+        }
+      } catch (err) {
+        console.warn("[SW] update failed:", err);
+      }
+
+      await hardReloadApp();
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (refreshingForUpdate) return;
+      if (!hadControllerAtBoot && !needsUpdateReload()) return;
+      refreshingForUpdate = true;
+      reloadApp();
     });
 
-    window.addEventListener("load", () => {
+    navigator.serviceWorker.addEventListener("message", function (event) {
+      if (event.data && event.data.type === "EAT_SW_READY" && needsUpdateReload()) {
+        reloadApp();
+      }
+    });
+
+    window.addEventListener("load", function () {
       navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
-        .then((registration) => {
-          registration.update().catch(() => {});
+        .then(function (registration) {
+          registration.update().catch(function () {});
 
           if (registration.waiting && hadControllerAtBoot) {
             triggerUpdate(registration.waiting);
           }
 
-          registration.addEventListener("updatefound", () => {
+          registration.addEventListener("updatefound", function () {
             const worker = registration.installing;
             if (!worker) return;
-            worker.addEventListener("statechange", () => {
+            worker.addEventListener("statechange", function () {
               if (worker.state === "installed" && navigator.serviceWorker.controller) {
                 triggerUpdate(worker);
               }
             });
           });
         })
-        .catch((err) =>
-          console.warn("[SW] registration failed:", err),
-        );
+        .catch(function (err) {
+          console.warn("[SW] registration failed:", err);
+        });
     });
-  }
 
-  function triggerUpdate(worker) {
-    let banner = document.getElementById("updateBanner");
-    if (!banner) {
-      banner = document.createElement("div");
-      banner.id = "updateBanner";
-      banner.className = "update-banner";
-      banner.innerHTML = "<span>Nuova versione disponibile</span> <button>Aggiorna</button>";
-      document.body.appendChild(banner);
+    function triggerUpdate(worker) {
+      let banner = document.getElementById("updateBanner");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "updateBanner";
+        banner.className = "update-banner";
+        banner.innerHTML = "<span>Nuova versione disponibile</span> <button type=\"button\">Aggiorna</button>";
+        document.body.appendChild(banner);
+      }
+      const button = banner.querySelector("button");
+      banner.classList.add("show");
+      button.disabled = false;
+      button.textContent = "Aggiorna";
+      button.onclick = function () {
+        button.disabled = true;
+        button.textContent = "Aggiorno...";
+        banner.classList.remove("show");
+        window.EAT_REFRESH_APP(worker);
+      };
     }
-    banner.classList.add("show");
-    banner.querySelector("button").onclick = () => {
-      banner.classList.remove("show");
-      worker.postMessage({ type: "EAT_SKIP_WAITING" });
-    };
-  }
+  })();
 </script>
 
 </body>

@@ -90,8 +90,13 @@ function App() {
   // ── navigation ──
   const [tab, setTab] = useStateApp('today');
   const switchTab = (nextTab) => {
-    if (!nextTab || nextTab === tab) return;
-    setTab(nextTab);
+    if (!nextTab) return;
+    const commit = () => setTab(prev => (prev === nextTab ? prev : nextTab));
+    if (typeof React.startTransition === 'function') {
+      React.startTransition(commit);
+    } else {
+      commit();
+    }
   };
 
   // Reset scroll position on tab change without unmounting the whole scroller DOM node
@@ -280,8 +285,9 @@ function App() {
           onChange={v => setTweak('density', v)} />
 
         <TweakSection label="Dati" />
-        <TweakButton label="Ricarica app" secondary onClick={() => {
-          location.reload();
+        <TweakButton label="Aggiorna app" secondary onClick={() => {
+          if (typeof window.EAT_REFRESH_APP === 'function') window.EAT_REFRESH_APP();
+          else location.reload();
         }} />
       </TweaksPanel>
     </div>
@@ -329,11 +335,17 @@ function PaletteRadio({ value, onChange }) {
 
 // ─── Bottom navigation ────────────────────────────────────────────────────
 function BottomNav({ tab, onChange, onAdd }) {
+  const addFromTouch = (event) => {
+    if (event.pointerType && event.pointerType !== 'mouse') {
+      event.preventDefault();
+      onAdd();
+    }
+  };
   return (
     <nav className="bnav">
       <NavBtn icon="home"     label="Oggi"        on={tab === 'today'}    onClick={() => onChange('today')} />
       <NavBtn icon="barcode"  label="Scanner"     on={tab === 'scanner'}  onClick={() => onChange('scanner')} />
-      <button type="button" className="fab" onClick={onAdd} aria-label="Aggiungi pasto">
+      <button type="button" className="fab" onPointerDown={addFromTouch} onClick={onAdd} aria-label="Aggiungi pasto">
         <Icon name="plus" size={24} stroke={2} />
       </button>
       <NavBtn icon="stats"    label="Statistiche" on={tab === 'stats'}    onClick={() => onChange('stats')} />
@@ -364,6 +376,7 @@ function BottomNav({ tab, onChange, onAdd }) {
           font: inherit; font-size: 9.5px; font-weight: 500; letter-spacing: 0.02em;
           transition: color 0.15s;
           touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
         }
         .nav-btn.on { color: var(--ink); }
         @media (hover: hover) {
@@ -380,6 +393,7 @@ function BottomNav({ tab, onChange, onAdd }) {
             0 0 0 4px var(--bg);
           transition: transform 0.15s, box-shadow 0.15s;
           touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
         }
         @media (hover: hover) {
           .fab:hover { transform: translateY(-2px); }
@@ -390,8 +404,20 @@ function BottomNav({ tab, onChange, onAdd }) {
   );
 }
 function NavBtn({ icon, label, on, onClick }) {
+  const selectFromTouch = (event) => {
+    if (event.pointerType && event.pointerType !== 'mouse') {
+      event.preventDefault();
+      onClick();
+    }
+  };
   return (
-    <button type="button" className={`nav-btn ${on ? 'on' : ''}`} onClick={onClick} aria-current={on ? 'page' : undefined}>
+    <button
+      type="button"
+      className={`nav-btn ${on ? 'on' : ''}`}
+      onPointerDown={selectFromTouch}
+      onClick={onClick}
+      aria-current={on ? 'page' : undefined}
+    >
       <Icon name={icon} size={20} stroke={on ? 2 : 1.6} />
       <span>{label}</span>
     </button>
@@ -460,3 +486,6 @@ function TopBar({ palette, onPalette, onSearch }) {
 // ─── Mount ─────────────────────────────────────────────────────────────────
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
+if (typeof window.EAT_CLEAR_SPLASH_RESCUE === 'function') {
+  window.setTimeout(window.EAT_CLEAR_SPLASH_RESCUE, 0);
+}

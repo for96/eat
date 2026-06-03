@@ -308,6 +308,14 @@
         water_ml: state.goals.water_ml,
       }),
       put: async (partial) => {
+        const changedKey =
+          partial.kcal !== undefined ? 'kcal' :
+          partial.protein_g !== undefined ? 'p' :
+          partial.carbs_g !== undefined ? 'c' :
+          partial.fat_g !== undefined ? 'fat' :
+          partial.fiber_g !== undefined ? 'fb' :
+          partial.water_ml !== undefined ? 'water_ml' :
+          null;
         const merged = {
           ...state.goals,
           ...(partial.kcal !== undefined && { kcal: partial.kcal }),
@@ -318,7 +326,7 @@
           ...(partial.water_ml !== undefined && { water_ml: partial.water_ml }),
         };
         state.goals = window.balanceGoalsToKcal
-          ? window.balanceGoalsToKcal(merged, state.profile)
+          ? window.balanceGoalsToKcal(merged, state.profile, changedKey)
           : merged;
         save();
         return window.api.goals.get();

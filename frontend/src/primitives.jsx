@@ -160,24 +160,20 @@ function Sheet({ open, onClose, title, children, maxHeight = '85%' }) {
   const [mounted, setMounted] = useState(open);
   const [vis, setVis] = useState(false);
   useEffect(() => {
-    let frame1;
-    let frame2;
+    let frame;
     let timer;
 
     if (open) {
       setMounted(true);
       setVis(false);
-      frame1 = requestAnimationFrame(() => {
-        frame2 = requestAnimationFrame(() => setVis(true));
-      });
+      frame = requestAnimationFrame(() => setVis(true));
     } else {
       setVis(false);
       timer = setTimeout(() => setMounted(false), 260);
     }
 
     return () => {
-      cancelAnimationFrame(frame1);
-      cancelAnimationFrame(frame2);
+      cancelAnimationFrame(frame);
       clearTimeout(timer);
     };
   }, [open]);
@@ -215,12 +211,12 @@ function Sheet({ open, onClose, title, children, maxHeight = '85%' }) {
           border-top: 1px solid var(--line);
           min-height: 0;
           overflow: hidden;
-          transform: translate3d(0, calc(100% + 12px), 0);
-          transition: transform 0.28s cubic-bezier(.3,.7,.4,1);
+          transform: translate3d(0, 100%, 0);
+          transition: transform 0.24s cubic-bezier(.22,.75,.28,1);
           display: flex; flex-direction: column;
           will-change: transform;
           backface-visibility: hidden;
-          contain: layout paint;
+          contain: paint;
           box-shadow: 0 -10px 30px rgba(31,27,22,.15);
         }
         .sheet-wrap.on .sheet { transform: translate3d(0, 0, 0); }
