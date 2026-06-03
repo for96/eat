@@ -26,6 +26,8 @@
       weightKg: clampNumber(profile.weightKg ?? base.weightKg, 30, 250, base.weightKg),
       heightCm: clampNumber(profile.heightCm ?? base.heightCm, 120, 230, base.heightCm),
       targetWeightKg: clampNumber(profile.targetWeightKg ?? base.targetWeightKg, 30, 250, base.targetWeightKg),
+      age: clampNumber(profile.age ?? base.age, 1, 120, base.age),
+      sex: ['male', 'female'].includes(profile.sex) ? profile.sex : base.sex,
       weightGoal: ['lose', 'maintain', 'gain'].includes(profile.weightGoal) ? profile.weightGoal : base.weightGoal,
       activityLevel: ['sedentary', 'light', 'moderate', 'high'].includes(profile.activityLevel) ? profile.activityLevel : base.activityLevel,
       activityMinutesWeek: clampNumber(profile.activityMinutesWeek ?? base.activityMinutesWeek, 0, 2000, base.activityMinutesWeek),

@@ -23,6 +23,8 @@ window.DEFAULT_PROFILE = {
   weightKg: 78,
   heightCm: 178,
   targetWeightKg: 76,
+  age: 30,
+  sex: 'male',
   weightGoal: 'maintain',
   activityLevel: 'moderate',
   activityMinutesWeek: 180,

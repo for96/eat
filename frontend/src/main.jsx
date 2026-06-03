@@ -75,6 +75,12 @@ function App() {
   // ── navigation ──
   const [tab, setTab] = useStateApp('today');
 
+  // Reset scroll position on tab change without unmounting the whole scroller DOM node
+  useEffectApp(() => {
+    const scroller = document.querySelector('.scroller');
+    if (scroller) scroller.scrollTop = 0;
+  }, [tab]);
+
   // ── add meal modal ──
   const [addOpen, setAddOpen] = useStateApp(false);
   const [addSlot, setAddSlot] = useStateApp('colazione');
@@ -175,7 +181,7 @@ function App() {
           onPalette={v => setTweak('palette', v)}
           onSearch={() => openAdd()}
         />
-        <div className="scroller" key={tab}>
+        <div className="scroller">
           {tab === 'today' && (
             <TodayScreen
               history={history}
@@ -335,9 +341,12 @@ function BottomNav({ tab, onChange, onAdd }) {
           padding: 4px 4px; cursor: pointer; color: var(--ink-faint);
           font: inherit; font-size: 9.5px; font-weight: 500; letter-spacing: 0.02em;
           transition: color 0.15s;
+          touch-action: manipulation;
         }
         .nav-btn.on { color: var(--ink); }
-        .nav-btn:hover:not(.on) { color: var(--ink-soft); }
+        @media (hover: hover) {
+          .nav-btn:hover:not(.on) { color: var(--ink-soft); }
+        }
         .fab {
           width: 46px; height: 46px; border-radius: 23px;
           background: var(--accent); color: #fff; border: 0; cursor: pointer;
@@ -348,8 +357,11 @@ function BottomNav({ tab, onChange, onAdd }) {
             0 6px 16px -4px color-mix(in oklab, var(--accent) 60%, transparent),
             0 0 0 4px var(--bg);
           transition: transform 0.15s, box-shadow 0.15s;
+          touch-action: manipulation;
         }
-        .fab:hover { transform: translateY(-2px); }
+        @media (hover: hover) {
+          .fab:hover { transform: translateY(-2px); }
+        }
         .fab:active { transform: scale(0.95); }
       `}</style>
     </nav>

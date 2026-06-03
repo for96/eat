@@ -991,6 +991,46 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
   const [section, setSection] = useStateSc('goals');
   const safeProfile = { ...(window.DEFAULT_PROFILE || {}), ...(profile || {}) };
 
+  // BMI calculation
+  const heightM = safeProfile.heightCm / 100;
+  const bmi = heightM > 0 ? safeProfile.weightKg / (heightM * heightM) : 0;
+  let bmiStatus = 'Normopeso';
+  let bmiColor = 'var(--fat)'; // green
+  if (bmi < 18.5) {
+    bmiStatus = 'Sottopeso';
+    bmiColor = 'var(--carbs)'; // yellow
+  } else if (bmi >= 25 && bmi < 30) {
+    bmiStatus = 'Sovrappeso';
+    bmiColor = 'var(--carbs)'; // yellow
+  } else if (bmi >= 30) {
+    bmiStatus = 'Obesità';
+    bmiColor = 'var(--accent)'; // red
+  }
+
+  // Mifflin-St Jeor BMR
+  const bmr = safeProfile.sex === 'female'
+    ? (10 * safeProfile.weightKg) + (6.25 * safeProfile.heightCm) - (5 * safeProfile.age) - 161
+    : (10 * safeProfile.weightKg) + (6.25 * safeProfile.heightCm) - (5 * safeProfile.age) + 5;
+
+  // TDEE activity factor
+  const activityFactors = {
+    sedentary: 1.2,
+    light: 1.375,
+    moderate: 1.55,
+    high: 1.725
+  };
+  const factor = activityFactors[safeProfile.activityLevel] || 1.2;
+  const tdee = bmr * factor;
+
+  // Recommended calorie intake based on goal
+  let recommendedKcal = tdee;
+  if (safeProfile.weightGoal === 'lose') {
+    recommendedKcal = tdee - 400;
+  } else if (safeProfile.weightGoal === 'gain') {
+    recommendedKcal = tdee + 300;
+  }
+  recommendedKcal = Math.max(1200, recommendedKcal);
+
   // macro split %
   const splitTotal = Math.max(1, goals.p * 4 + goals.c * 4 + goals.fat * 9);
   const pPct = Math.round((goals.p * 4 / splitTotal) * 100);
@@ -1043,6 +1083,39 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
               <span className="display num" style={{ fontSize: 22 }}>{goals.kcal}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> kcal</span></span>
             </div>
             <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={setCaloriesGoal} />
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>Parametri Calcolati</div>
+            <div className="calculated-grid">
+              <div className="calc-item">
+                <span className="calc-label">BMI</span>
+                <span className="calc-value display num">{bmi.toFixed(1)}</span>
+                <span className="calc-sub" style={{ color: bmiColor }}>{bmiStatus}</span>
+              </div>
+              <div className="calc-item">
+                <span className="calc-label">Fabbisogno (TDEE)</span>
+                <span className="calc-value display num">{Math.round(tdee)}<span style={{ fontSize: 10, color: 'var(--ink-soft)' }}> kcal</span></span>
+                <span className="calc-sub">Metabolismo attivo</span>
+              </div>
+              <div className="calc-item">
+                <span className="calc-label">Consigliato</span>
+                <span className="calc-value display num" style={{ color: 'var(--accent)' }}>{Math.round(recommendedKcal)}<span style={{ fontSize: 10, color: 'var(--ink-soft)' }}> kcal</span></span>
+                <span className="calc-sub">Per {weightGoalLabel(safeProfile.weightGoal).toLowerCase()}</span>
+              </div>
+            </div>
+            <div className="calc-profile-meta" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line-soft)', fontSize: 11.5, color: 'var(--ink-soft)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Sesso: <strong>{safeProfile.sex === 'female' ? 'Donna' : 'Uomo'}</strong></span>
+              <span>Età: <strong>{safeProfile.age} anni</strong></span>
+              <span>BMR: <strong>{Math.round(bmr)} kcal</strong></span>
+            </div>
+            <style>{`
+              .calculated-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+              .calc-item { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 4px; }
+              .calc-label { font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+              .calc-value { font-size: 19px; font-weight: 600; color: var(--ink); }
+              .calc-sub { font-size: 10.5px; color: var(--ink-soft); font-weight: 500; }
+            `}</style>
           </div>
 
           <div className="card" style={{ marginTop: 12 }}>
@@ -1193,6 +1266,16 @@ function ProfileDetailsForm({ profile, onProfileChange }) {
           <ProfileField label="Altezza" type="number" unit="cm" value={draft.heightCm} min={120} max={230} step={1} onChange={(v) => update('heightCm', v)} />
           <ProfileField label="Obiettivo peso" type="number" unit="kg" value={draft.targetWeightKg} min={30} max={250} step={0.1} onChange={(v) => update('targetWeightKg', v)} />
           <ProfileField label="Attivita" type="number" unit="min/sett" value={draft.activityMinutesWeek} min={0} max={2000} step={15} onChange={(v) => update('activityMinutesWeek', v)} />
+          <ProfileField label="Età" type="number" unit="anni" value={draft.age} min={1} max={120} step={1} onChange={(v) => update('age', v)} />
+          <ProfileSelect
+            label="Sesso"
+            value={draft.sex}
+            onChange={(v) => update('sex', v)}
+            options={[
+              ['male', 'Uomo'],
+              ['female', 'Donna'],
+            ]}
+          />
         </div>
         <div className="profile-form-grid two" style={{ marginTop: 10 }}>
           <ProfileSelect
@@ -1305,6 +1388,8 @@ function cleanProfileDraft(draft) {
     weightKg: toProfileNumber(draft.weightKg, 30, 250, window.DEFAULT_PROFILE.weightKg),
     heightCm: toProfileNumber(draft.heightCm, 120, 230, window.DEFAULT_PROFILE.heightCm),
     targetWeightKg: toProfileNumber(draft.targetWeightKg, 30, 250, window.DEFAULT_PROFILE.targetWeightKg),
+    age: Math.round(toProfileNumber(draft.age, 1, 120, window.DEFAULT_PROFILE.age)),
+    sex: ['male', 'female'].includes(draft.sex) ? draft.sex : window.DEFAULT_PROFILE.sex,
     activityMinutesWeek: Math.round(toProfileNumber(draft.activityMinutesWeek, 0, 2000, window.DEFAULT_PROFILE.activityMinutesWeek)),
   };
 }
