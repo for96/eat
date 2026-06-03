@@ -88,10 +88,14 @@
   }
 
   function initialState() {
+    const profile = normalizeProfile(window.DEFAULT_PROFILE);
+    const goals = window.recommendedGoalsForProfile
+      ? window.recommendedGoalsForProfile(profile)
+      : { ...(seed.default_goals || window.DEFAULT_GOALS) };
     return {
       version: CURRENT_VERSION,
-      profile: normalizeProfile(window.DEFAULT_PROFILE),
-      goals: { ...(seed.default_goals || window.DEFAULT_GOALS) },
+      profile,
+      goals,
       foods: (seed.foods || []).map(normalizeFood),
       favorites: (seed.favorites || []).map(normalizeFavorite),
       history: {},
@@ -304,7 +308,7 @@
         water_ml: state.goals.water_ml,
       }),
       put: async (partial) => {
-        state.goals = {
+        const merged = {
           ...state.goals,
           ...(partial.kcal !== undefined && { kcal: partial.kcal }),
           ...(partial.protein_g !== undefined && { p: partial.protein_g }),
@@ -313,6 +317,9 @@
           ...(partial.fiber_g !== undefined && { fb: partial.fiber_g }),
           ...(partial.water_ml !== undefined && { water_ml: partial.water_ml }),
         };
+        state.goals = window.balanceGoalsToKcal
+          ? window.balanceGoalsToKcal(merged, state.profile)
+          : merged;
         save();
         return window.api.goals.get();
       },

@@ -327,6 +327,10 @@
     }, { passive: false });
 
     document.addEventListener("touchend", (event) => {
+      if (event.target.closest("button,a,input,select,textarea,[role='button']")) {
+        lastTouchEnd = 0;
+        return;
+      }
       const now = Date.now();
       if (now - lastTouchEnd < 320) {
         event.preventDefault();

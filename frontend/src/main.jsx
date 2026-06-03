@@ -9,10 +9,15 @@ function bootStateWithToday(boot) {
   if (!history[todayKey]) {
     history[todayKey] = { colazione: [], pranzo: [], cena: [], spuntini: [], water_ml: 0 };
   }
+  const profile = { ...((boot && boot.profile) || window.DEFAULT_PROFILE) };
+  const rawGoals = { ...((boot && boot.goals) || window.DEFAULT_GOALS) };
+  const goals = window.balanceGoalsToKcal
+    ? window.balanceGoalsToKcal(rawGoals, profile)
+    : rawGoals;
   return {
     history,
-    goals: { ...((boot && boot.goals) || window.DEFAULT_GOALS) },
-    profile: { ...((boot && boot.profile) || window.DEFAULT_PROFILE) },
+    goals,
+    profile,
     scans: (boot && boot.scans) || [],
   };
 }
@@ -45,18 +50,23 @@ function App() {
     })();
   }, []);
 
-  // setGoals wrappato: aggiorna stato locale e fa PUT al backend (fire-and-forget).
-  const setGoals = (next) => {
-    const obj = typeof next === 'function' ? next(goals) : next;
+  const persistGoals = (obj) => window.api.goals.put({
+    kcal: obj.kcal,
+    protein_g: obj.p,
+    carbs_g: obj.c,
+    fat_g: obj.fat,
+    fiber_g: obj.fb,
+    water_ml: obj.water_ml,
+  });
+
+  // setGoals wrappato: aggiorna stato locale e persistenza locale.
+  const setGoals = (next, changedKey = null) => {
+    const raw = typeof next === 'function' ? next(goals) : next;
+    const obj = window.balanceGoalsToKcal
+      ? window.balanceGoalsToKcal(raw, profile, changedKey)
+      : raw;
     setGoalsState(obj);
-    window.api.goals.put({
-      kcal: obj.kcal,
-      protein_g: obj.p,
-      carbs_g: obj.c,
-      fat_g: obj.fat,
-      fiber_g: obj.fb,
-      water_ml: obj.water_ml,
-    }).catch(err => console.error('PUT /goals fallito:', err));
+    persistGoals(obj).catch(err => console.error('PUT /goals fallito:', err));
   };
 
   const setProfile = async (next) => {
@@ -65,6 +75,11 @@ function App() {
     try {
       const saved = await window.api.profile.put(obj);
       setProfileState(saved);
+      const recalibrated = window.recommendedGoalsForProfile
+        ? window.recommendedGoalsForProfile(saved)
+        : goals;
+      setGoalsState(recalibrated);
+      persistGoals(recalibrated).catch(err => console.error('PUT /goals dopo profile fallito:', err));
       return saved;
     } catch (err) {
       console.error('PUT /profile locale fallito:', err);
@@ -74,6 +89,10 @@ function App() {
 
   // ── navigation ──
   const [tab, setTab] = useStateApp('today');
+  const switchTab = (nextTab) => {
+    if (!nextTab || nextTab === tab) return;
+    setTab(nextTab);
+  };
 
   // Reset scroll position on tab change without unmounting the whole scroller DOM node
   useEffectApp(() => {
@@ -226,7 +245,7 @@ function App() {
           )}
         </div>
 
-        <BottomNav tab={tab} onChange={setTab} onAdd={() => openAdd()} />
+        <BottomNav tab={tab} onChange={switchTab} onAdd={() => openAdd()} />
 
         <AddMealSheet
           open={addOpen}
@@ -314,7 +333,7 @@ function BottomNav({ tab, onChange, onAdd }) {
     <nav className="bnav">
       <NavBtn icon="home"     label="Oggi"        on={tab === 'today'}    onClick={() => onChange('today')} />
       <NavBtn icon="barcode"  label="Scanner"     on={tab === 'scanner'}  onClick={() => onChange('scanner')} />
-      <button className="fab" onClick={onAdd} aria-label="Aggiungi pasto">
+      <button type="button" className="fab" onClick={onAdd} aria-label="Aggiungi pasto">
         <Icon name="plus" size={24} stroke={2} />
       </button>
       <NavBtn icon="stats"    label="Statistiche" on={tab === 'stats'}    onClick={() => onChange('stats')} />
@@ -330,6 +349,9 @@ function BottomNav({ tab, onChange, onAdd }) {
           gap: 4px;
           position: relative;
           z-index: 20;
+          touch-action: manipulation;
+          -webkit-user-select: none;
+          user-select: none;
         }
         .bnav::before {
           content: ""; position: absolute; left: 16px; right: 16px; top: 0;
@@ -369,7 +391,7 @@ function BottomNav({ tab, onChange, onAdd }) {
 }
 function NavBtn({ icon, label, on, onClick }) {
   return (
-    <button className={`nav-btn ${on ? 'on' : ''}`} onClick={onClick}>
+    <button type="button" className={`nav-btn ${on ? 'on' : ''}`} onClick={onClick} aria-current={on ? 'page' : undefined}>
       <Icon name={icon} size={20} stroke={on ? 2 : 1.6} />
       <span>{label}</span>
     </button>

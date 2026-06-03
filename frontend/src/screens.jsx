@@ -1003,14 +1003,28 @@ function QualityList({ title, items, tone, empty }) {
 // PROFILE / SETTINGS
 // ════════════════════════════════════════════════════════════════════════
 function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE, onProfileChange, history = {}, scans = [] }) {
-  const setG = (key, v) => onGoalsChange({ ...goals, [key]: v });
-  const setCaloriesGoal = (kcal) => onGoalsChange(scaleGoalsToCalories(goals, kcal));
   const [section, setSection] = useStateSc('goals');
   const safeProfile = { ...(window.DEFAULT_PROFILE || {}), ...(profile || {}) };
+  const setG = (key, v) => {
+    const next = { ...goals, [key]: v };
+    onGoalsChange(
+      window.balanceGoalsToKcal ? window.balanceGoalsToKcal(next, safeProfile, key) : next,
+      key,
+    );
+  };
+  const setCaloriesGoal = (kcal) => onGoalsChange(
+    window.recommendedGoalsForProfile
+      ? window.recommendedGoalsForProfile(safeProfile, kcal, { keepWaterMl: goals.water_ml })
+      : scaleGoalsToCalories(goals, kcal),
+    'kcal',
+  );
 
   // BMI calculation
+  const energy = window.profileEnergyEstimate
+    ? window.profileEnergyEstimate(safeProfile)
+    : null;
   const heightM = safeProfile.heightCm / 100;
-  const bmi = heightM > 0 ? safeProfile.weightKg / (heightM * heightM) : 0;
+  const bmi = energy?.bmi ?? (heightM > 0 ? safeProfile.weightKg / (heightM * heightM) : 0);
   let bmiStatus = 'Normopeso';
   let bmiColor = 'var(--fat)'; // green
   if (bmi < 18.5) {
@@ -1024,35 +1038,25 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
     bmiColor = 'var(--accent)'; // red
   }
 
-  // Mifflin-St Jeor BMR
-  const bmr = safeProfile.sex === 'female'
-    ? (10 * safeProfile.weightKg) + (6.25 * safeProfile.heightCm) - (5 * safeProfile.age) - 161
-    : (10 * safeProfile.weightKg) + (6.25 * safeProfile.heightCm) - (5 * safeProfile.age) + 5;
-
-  // TDEE activity factor
-  const activityFactors = {
-    sedentary: 1.2,
-    light: 1.375,
-    moderate: 1.55,
-    high: 1.725
-  };
-  const factor = activityFactors[safeProfile.activityLevel] || 1.2;
-  const tdee = bmr * factor;
-
-  // Recommended calorie intake based on goal
-  let recommendedKcal = tdee;
-  if (safeProfile.weightGoal === 'lose') {
-    recommendedKcal = tdee - 400;
-  } else if (safeProfile.weightGoal === 'gain') {
-    recommendedKcal = tdee + 300;
-  }
-  recommendedKcal = Math.max(1200, recommendedKcal);
+  const bmr = energy?.bmr ?? 0;
+  const tdee = energy?.tdee ?? 0;
+  const recommendedKcal = energy?.recommendedKcal ?? goals.kcal;
 
   // macro split %
   const splitTotal = Math.max(1, goals.p * 4 + goals.c * 4 + goals.fat * 9);
   const pPct = Math.round((goals.p * 4 / splitTotal) * 100);
   const cPct = Math.round((goals.c * 4 / splitTotal) * 100);
   const fPct = Math.round((goals.fat * 9 / splitTotal) * 100);
+  const macroRanges = window.macroGoalRanges
+    ? window.macroGoalRanges(goals, safeProfile)
+    : {
+        kcal: { min: 1200, max: 3500, step: 50 },
+        p: { min: 0, max: 250, step: 5 },
+        c: { min: 0, max: 500, step: 5 },
+        fat: { min: 0, max: 200, step: 5 },
+        fb: { min: 0, max: 60, step: 5 },
+        water_ml: { min: 1000, max: 4000, step: 250 },
+      };
   const title = {
     profile: 'Dati personali',
     goals: 'Obiettivi giornalieri',
@@ -1099,7 +1103,7 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
               <div className="eyebrow">Calorie</div>
               <span className="display num" style={{ fontSize: 22 }}>{goals.kcal}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> kcal</span></span>
             </div>
-            <SliderRow value={goals.kcal} min={1200} max={3500} step={50} onChange={setCaloriesGoal} />
+            <SliderRow value={goals.kcal} min={macroRanges.kcal.min} max={macroRanges.kcal.max} step={macroRanges.kcal.step} onChange={setCaloriesGoal} />
           </div>
 
           <div className="card" style={{ marginTop: 12 }}>
@@ -1143,10 +1147,10 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
               <div style={{ width: `${fPct}%`, background: 'var(--fat)' }} />
             </div>
             <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <MacroGoalRow label="Proteine" color="var(--protein)" value={goals.p} pct={pPct} max={250} onChange={v => setG('p', v)} />
-              <MacroGoalRow label="Carboidrati" color="var(--carbs)" value={goals.c} pct={cPct} max={500} onChange={v => setG('c', v)} />
-              <MacroGoalRow label="Grassi" color="var(--fat)" value={goals.fat} pct={fPct} max={200} onChange={v => setG('fat', v)} />
-              <MacroGoalRow label="Fibre" color="var(--fiber)" value={goals.fb} max={60} onChange={v => setG('fb', v)} />
+              <MacroGoalRow label="Proteine" color="var(--protein)" value={goals.p} pct={pPct} min={macroRanges.p.min} max={macroRanges.p.max} step={macroRanges.p.step} onChange={v => setG('p', v)} />
+              <MacroGoalRow label="Carboidrati" color="var(--carbs)" value={goals.c} pct={cPct} min={macroRanges.c.min} max={macroRanges.c.max} step={macroRanges.c.step} onChange={v => setG('c', v)} />
+              <MacroGoalRow label="Grassi" color="var(--fat)" value={goals.fat} pct={fPct} min={macroRanges.fat.min} max={macroRanges.fat.max} step={macroRanges.fat.step} onChange={v => setG('fat', v)} />
+              <MacroGoalRow label="Fibre" color="var(--fiber)" value={goals.fb} min={macroRanges.fb.min} max={macroRanges.fb.max} step={macroRanges.fb.step} onChange={v => setG('fb', v)} />
             </div>
           </div>
 
@@ -1155,7 +1159,7 @@ function ProfileScreen({ goals, onGoalsChange, profile = window.DEFAULT_PROFILE,
               <div className="eyebrow">Acqua</div>
               <span className="display num" style={{ fontSize: 22 }}>{(goals.water_ml/1000).toFixed(1)}<span style={{ fontSize: 11, color: 'var(--ink-soft)' }}> L</span></span>
             </div>
-            <SliderRow value={goals.water_ml} min={1000} max={4000} step={250} onChange={v => setG('water_ml', v)} color="var(--water)" />
+            <SliderRow value={goals.water_ml} min={macroRanges.water_ml.min} max={macroRanges.water_ml.max} step={macroRanges.water_ml.step} onChange={v => setG('water_ml', v)} color="var(--water)" />
           </div>
         </>
       )}
@@ -1545,7 +1549,7 @@ function SliderRow({ value, min, max, step, onChange, color }) {
   return (
     <div style={{ marginTop: 10 }}>
       <input type="range" min={min} max={max} step={step} value={value}
-             onChange={e => onChange(+e.target.value)}
+             onInput={e => onChange(+e.currentTarget.value)}
              className="slider" style={color ? { '--accent': color } : {}} />
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
         <span className="num">{min}</span>
@@ -1599,7 +1603,7 @@ function roundGoalGrams(value) {
   return Math.max(0, Math.round(value / 5) * 5);
 }
 
-function MacroGoalRow({ label, color, value, pct, max, onChange }) {
+function MacroGoalRow({ label, color, value, pct, min = 0, max, step = 5, onChange }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
@@ -1612,8 +1616,8 @@ function MacroGoalRow({ label, color, value, pct, max, onChange }) {
           <span><span className="num" style={{ color: 'var(--ink)', fontWeight: 500 }}>{value}</span><span style={{ color: 'var(--ink-soft)' }}>g</span></span>
         </div>
       </div>
-      <input type="range" min={0} max={max} step={5} value={value}
-             onChange={e => onChange(+e.target.value)}
+      <input type="range" min={min} max={max} step={step} value={value}
+             onInput={e => onChange(+e.currentTarget.value)}
              className="slider" style={{ '--accent': color }} />
     </div>
   );
