@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>eat — diario nutrizionale</title>
 
 <!-- PWA manifest + iOS web-app meta -->
@@ -97,10 +97,22 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; min-height: 100%; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: pan-y;
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     min-height: 100vh;
     min-height: 100svh;
+    position: fixed;
+    inset: 0;
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-ui);
@@ -109,7 +121,6 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     font-feature-settings: "ss01", "cv11";
-    overscroll-behavior: none;
   }
 
   /* Ambient frame */
@@ -152,6 +163,8 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
   .scroller::-webkit-scrollbar { display: none; }
@@ -164,6 +177,7 @@
     font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
     color: var(--ink-soft); font-weight: 500;
   }
+  button, input, textarea, select, a { touch-action: manipulation; }
   button { font-family: inherit; }
 
   /* Hide scrollbars on horizontal scrollers */
@@ -247,6 +261,80 @@
 <div id="root">
   <div class="splash">eat</div>
 </div>
+
+<script>
+  (function () {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let lastTouchEnd = 0;
+
+    function preventGesture(event) {
+      event.preventDefault();
+    }
+
+    function nearestScrollable(node) {
+      while (node && node !== document.body) {
+        if (node.nodeType === 1) {
+          const style = window.getComputedStyle(node);
+          const canScroll = /(auto|scroll|overlay)/.test(style.overflowY)
+            && node.scrollHeight > node.clientHeight;
+          if (canScroll || node.classList.contains("scroller")) return node;
+        }
+        node = node.parentElement;
+      }
+      return document.querySelector(".scroller");
+    }
+
+    ["gesturestart", "gesturechange", "gestureend"].forEach((name) => {
+      document.addEventListener(name, preventGesture, { passive: false });
+    });
+
+    document.addEventListener("dblclick", preventGesture, { passive: false });
+
+    document.addEventListener("touchstart", (event) => {
+      if (event.touches.length === 1) {
+        touchStartX = event.touches[0].clientX;
+        touchStartY = event.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (event) => {
+      if (event.touches.length > 1) {
+        event.preventDefault();
+        return;
+      }
+
+      const scrollable = nearestScrollable(event.target);
+      if (!scrollable || scrollable.scrollHeight <= scrollable.clientHeight) {
+        event.preventDefault();
+        return;
+      }
+
+      const x = event.touches[0].clientX;
+      const y = event.touches[0].clientY;
+      const deltaX = x - touchStartX;
+      const deltaY = y - touchStartY;
+      if (Math.abs(deltaY) <= Math.abs(deltaX)) return;
+
+      const pullingDown = deltaY > 0;
+      const pullingUp = deltaY < 0;
+      const atTop = scrollable.scrollTop <= 0;
+      const atBottom = Math.ceil(scrollable.scrollTop + scrollable.clientHeight) >= scrollable.scrollHeight;
+
+      if ((atTop && pullingDown) || (atBottom && pullingUp)) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    document.addEventListener("touchend", (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd < 320) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    }, { passive: false });
+  })();
+</script>
 
 <script>
   window.EAT_BUILD_ID = "dev";

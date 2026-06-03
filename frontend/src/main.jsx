@@ -317,9 +317,9 @@ function BottomNav({ tab, onChange, onAdd }) {
       <style>{`
         .bnav {
           flex-shrink: 0;
-          display: grid; grid-template-columns: 1fr 1fr 64px 1fr 1fr;
+          display: grid; grid-template-columns: 1fr 1fr 60px 1fr 1fr;
           align-items: center;
-          padding: 7px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+          padding: 5px 16px calc(8px + env(safe-area-inset-bottom, 0px));
           background: linear-gradient(180deg, transparent, var(--bg) 30%);
           gap: 4px;
           position: relative;
@@ -331,15 +331,15 @@ function BottomNav({ tab, onChange, onAdd }) {
         }
         .nav-btn {
           appearance: none; border: 0; background: transparent;
-          display: flex; flex-direction: column; align-items: center; gap: 2px;
-          padding: 5px 4px; cursor: pointer; color: var(--ink-faint);
-          font: inherit; font-size: 10px; font-weight: 500; letter-spacing: 0.02em;
+          display: flex; flex-direction: column; align-items: center; gap: 1px;
+          padding: 4px 4px; cursor: pointer; color: var(--ink-faint);
+          font: inherit; font-size: 9.5px; font-weight: 500; letter-spacing: 0.02em;
           transition: color 0.15s;
         }
         .nav-btn.on { color: var(--ink); }
         .nav-btn:hover:not(.on) { color: var(--ink-soft); }
         .fab {
-          width: 48px; height: 48px; border-radius: 24px;
+          width: 46px; height: 46px; border-radius: 23px;
           background: var(--accent); color: #fff; border: 0; cursor: pointer;
           display: grid; place-items: center;
           margin: 0 auto;
